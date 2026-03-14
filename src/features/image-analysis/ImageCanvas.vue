@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps<{
   imageData: ImageData
@@ -21,7 +21,10 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 
 watch(
   () => props.imageData,
-  (data) => drawCanvas(data),
+  async (data) => {
+    await nextTick()
+    drawCanvas(data)
+  },
   { immediate: true },
 )
 
