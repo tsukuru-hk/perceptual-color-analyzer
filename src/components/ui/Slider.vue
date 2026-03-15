@@ -10,7 +10,7 @@
       :max="max"
       :step="step"
       class="relative flex w-full touch-none select-none items-center"
-      @update:model-value="(val: number[]) => $emit('update:modelValue', val[0])"
+      @update:model-value="(val: number[] | undefined) => { if (val) $emit('update:modelValue', val[0]!) }"
     >
       <SliderTrack class="relative h-2 w-full grow rounded-full bg-secondary">
         <SliderRange class="absolute h-full rounded-full bg-primary" />

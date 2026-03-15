@@ -14,7 +14,7 @@ import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps<{
   imageData: ImageData
-  onCanvasClick: (clickedX: number, clickedY: number) => void
+  onCanvasClick?: (clickedX: number, clickedY: number) => void
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -50,7 +50,7 @@ function handleClick(event: MouseEvent) {
   const pixelX = Math.floor((event.clientX - rect.left) * scaleX)
   const pixelY = Math.floor((event.clientY - rect.top) * scaleY)
 
-  props.onCanvasClick(pixelX, pixelY)
+  props.onCanvasClick?.(pixelX, pixelY)
 }
 </script>
 

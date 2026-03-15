@@ -18,9 +18,9 @@ export function generateChromaMap(
   // 1st pass: 各ピクセルの chroma を取得し、最大値を追跡
   for (let i = 0; i < pixelCount; i++) {
     const offset = i * 4
-    const r = data[offset] / 255
-    const g = data[offset + 1] / 255
-    const b = data[offset + 2] / 255
+    const r = data[offset]! / 255
+    const g = data[offset + 1]! / 255
+    const b = data[offset + 2]! / 255
 
     const result = oklch({ mode: 'rgb', r, g, b })
     const c = result?.c ?? 0
@@ -47,7 +47,7 @@ export function generateChromaMap(
   // 2nd pass: 正規化してグレースケールに変換
   for (let i = 0; i < pixelCount; i++) {
     const offset = i * 4
-    const gray = Math.round((chromaValues[i] / maxChroma) * 255)
+    const gray = Math.round((chromaValues[i]! / maxChroma) * 255)
     outData[offset] = gray
     outData[offset + 1] = gray
     outData[offset + 2] = gray
