@@ -15,9 +15,9 @@ const props = defineProps<{
 }>()
 
 const oklchText = computed(() => {
-  const p = props.oklchValue
-  if (!p) return '—'
-  return `L: ${p.L.toFixed(4)}  C: ${p.C.toFixed(4)}  h: ${p.h.toFixed(2)}`
+  const value = props.oklchValue
+  if (!value) return '—'
+  return `L: ${value.lightness.toFixed(4)}  C: ${value.chroma.toFixed(4)}  h: ${value.hue.toFixed(2)}`
 })
 </script>
 

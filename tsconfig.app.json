@@ -8,6 +8,8 @@
       "@/*": ["./src/*"]
     },
 
+    "resolveJsonModule": true,
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

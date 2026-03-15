@@ -15,36 +15,39 @@ import type { PixelReadError } from '@/infrastructure/pixelReader';
 export type GetPixelOklchError = PixelReadError | 'ConversionError';
 
 /**
- * (x, y) のピクセルを OKLCH に変換する。
+ * (pixelX, pixelY) のピクセルを OKLCH に変換する。
  * sRGB は 0-255、Culori は 0-1 なので変換してから oklch() に渡す。
+ * @param imageData 対象の画像データ
+ * @param pixelX ピクセルの X 座標
+ * @param pixelY ピクセルの Y 座標
  */
 export function getPixelOklchUseCase(
   imageData: ImageData,
-  x: number,
-  y: number
+  pixelX: number,
+  pixelY: number
 ): Result<OklchValue, GetPixelOklchError> {
-  const pixelResult = getPixelAt(imageData, x, y);
+  const pixelResult = getPixelAt(imageData, pixelX, pixelY);
   if (pixelResult.isFailure()) return pixelResult;
 
-  const { r, g, b } = pixelResult.value;
+  const { red, green, blue } = pixelResult.value;
   const hex = formatHex({
     mode: 'rgb',
-    r: r / 255,
-    g: g / 255,
-    b: b / 255,
+    r: red / 255,
+    g: green / 255,
+    b: blue / 255,
   });
   const oklchColor = oklch(hex);
   if (!oklchColor || oklchColor.mode !== 'oklch') {
     return failure(
       new BaseError<GetPixelOklchError>({
         name: 'ConversionError',
-        message: `Could not convert pixel (${x}, ${y}) to OKLCH`,
+        message: `Could not convert pixel (${pixelX}, ${pixelY}) to OKLCH`,
       })
     );
   }
-  // Culori の oklch は L, c, h で、c が chroma。h は度数または undefined（無彩色）
-  const L = oklchColor.l ?? 0;
-  const C = oklchColor.c ?? 0;
-  const h = oklchColor.h ?? 0;
-  return success(createOklch(L, C, h));
+  // Culori の oklch は l, c, h で、c が chroma。h は度数または undefined（無彩色）
+  const lightness = oklchColor.l ?? 0;
+  const chroma = oklchColor.c ?? 0;
+  const hue = oklchColor.h ?? 0;
+  return success(createOklch(lightness, chroma, hue));
 }

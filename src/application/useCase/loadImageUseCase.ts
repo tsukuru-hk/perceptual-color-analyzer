@@ -10,6 +10,10 @@ import type { ImageLoadError } from '@/infrastructure/imageLoader';
 const DEFAULT_MAX_WIDTH = 800;
 const DEFAULT_MAX_HEIGHT = 600;
 
+/**
+ * @param file 画像ファイル
+ * @param options maxWidth / maxHeight で描画サイズを指定（省略時 800×600）
+ */
 export async function loadImageUseCase(
   file: File,
   options?: { maxWidth?: number; maxHeight?: number }

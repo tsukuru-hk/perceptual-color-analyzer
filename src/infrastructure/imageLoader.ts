@@ -11,6 +11,9 @@ export type ImageLoadError = 'FileReadError' | 'CanvasError' | 'InvalidImage';
 
 /**
  * File を読み込み、指定サイズの Canvas に描画して ImageData を返す。
+ * @param file 画像ファイル
+ * @param maxWidth 描画先の最大幅 (px)
+ * @param maxHeight 描画先の最大高さ (px)
  */
 export async function loadImageToImageData(
   file: File,
@@ -22,6 +25,7 @@ export async function loadImageToImageData(
   return drawToCanvasAndGetImageData(img.value, maxWidth, maxHeight);
 }
 
+/** @param file 読み込む画像ファイル */
 function loadFileAsImage(
   file: File
 ): Promise<Result<HTMLImageElement, ImageLoadError>> {
@@ -47,6 +51,11 @@ function loadFileAsImage(
   });
 }
 
+/**
+ * @param img デコード済みの画像要素
+ * @param maxWidth 最大幅 (px)
+ * @param maxHeight 最大高さ (px)
+ */
 function drawToCanvasAndGetImageData(
   img: HTMLImageElement,
   maxWidth: number,
@@ -69,12 +78,12 @@ function drawToCanvasAndGetImageData(
   try {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     return success(imageData);
-  } catch (e) {
+  } catch (error) {
     return failure(
       new BaseError<ImageLoadError>({
         name: 'CanvasError',
-        message: e instanceof Error ? e.message : 'getImageData failed',
-        cause: e,
+        message: error instanceof Error ? error.message : 'getImageData failed',
+        cause: error,
       })
     );
   }

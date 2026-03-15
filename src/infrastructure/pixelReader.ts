@@ -10,29 +10,34 @@ import { BaseError } from '@/core/result';
 export type PixelReadError = 'OutOfBounds';
 
 export interface RgbPixel {
-  r: number;
-  g: number;
-  b: number;
+  red: number;
+  green: number;
+  blue: number;
 }
 
+/**
+ * @param imageData 対象の画像データ
+ * @param pixelX ピクセルの X 座標
+ * @param pixelY ピクセルの Y 座標
+ */
 export function getPixelAt(
   imageData: ImageData,
-  x: number,
-  y: number
+  pixelX: number,
+  pixelY: number
 ): Result<RgbPixel, PixelReadError> {
   const { width, height, data } = imageData;
-  if (x < 0 || x >= width || y < 0 || y >= height) {
+  if (pixelX < 0 || pixelX >= width || pixelY < 0 || pixelY >= height) {
     return failure(
       new BaseError<PixelReadError>({
         name: 'OutOfBounds',
-        message: `Pixel (${x}, ${y}) is out of bounds (${width}x${height})`,
+        message: `Pixel (${pixelX}, ${pixelY}) is out of bounds (${width}x${height})`,
       })
     );
   }
-  const i = (y * width + x) * 4;
+  const byteOffset = (pixelY * width + pixelX) * 4;
   return success({
-    r: data[i]!,
-    g: data[i + 1]!,
-    b: data[i + 2]!,
+    red: data[byteOffset]!,
+    green: data[byteOffset + 1]!,
+    blue: data[byteOffset + 2]!,
   });
 }

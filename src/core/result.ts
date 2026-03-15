@@ -45,10 +45,12 @@ export class BaseError<T extends string> extends Error {
   }
 }
 
+/** @param value 成功値 */
 export function success<T>(value: T): Success<T> {
   return new Success(value);
 }
 
+/** @param error エラーオブジェクト */
 export function failure<E extends string>(error: BaseError<E>): Failure<E> {
   return new Failure(error);
 }

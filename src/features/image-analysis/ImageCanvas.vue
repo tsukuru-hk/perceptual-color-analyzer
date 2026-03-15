@@ -14,7 +14,7 @@ import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps<{
   imageData: ImageData
-  onCanvasClick: (x: number, y: number) => void
+  onCanvasClick: (clickedX: number, clickedY: number) => void
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -28,6 +28,7 @@ watch(
   { immediate: true },
 )
 
+/** @param data 描画する ImageData */
 function drawCanvas(data: ImageData) {
   const canvas = canvasRef.value
   if (!canvas) return
@@ -38,17 +39,18 @@ function drawCanvas(data: ImageData) {
   ctx.putImageData(data, 0, 0)
 }
 
-function handleClick(e: MouseEvent) {
+/** @param event Canvas 上のクリックイベント */
+function handleClick(event: MouseEvent) {
   const canvas = canvasRef.value
   if (!canvas) return
 
   const rect = canvas.getBoundingClientRect()
   const scaleX = canvas.width / rect.width
   const scaleY = canvas.height / rect.height
-  const x = Math.floor((e.clientX - rect.left) * scaleX)
-  const y = Math.floor((e.clientY - rect.top) * scaleY)
+  const pixelX = Math.floor((event.clientX - rect.left) * scaleX)
+  const pixelY = Math.floor((event.clientY - rect.top) * scaleY)
 
-  props.onCanvasClick(x, y)
+  props.onCanvasClick(pixelX, pixelY)
 }
 </script>
 
