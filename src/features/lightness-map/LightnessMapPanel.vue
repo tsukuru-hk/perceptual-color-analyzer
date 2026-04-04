@@ -6,24 +6,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { generateLightnessMapUseCase } from '@/application/useCase/generateLightnessMapUseCase'
 import ImageCanvas from '@/features/image-analysis/ImageCanvas.vue'
 
-const props = defineProps<{
-  /** オリジナル画像の ImageData */
-  imageData: ImageData
+defineProps<{
+  /** キャッシュ済みの明度マップ ImageData */
+  lightnessMapData: ImageData | null
 }>()
-
-/** generateLightnessMap の結果（失敗時は null で非表示） */
-const lightnessMapData = ref<ImageData | null>(null)
-
-watch(
-  () => props.imageData,
-  (newData) => {
-    const result = generateLightnessMapUseCase(newData)
-    lightnessMapData.value = result.isSuccess() ? result.value : null
-  },
-  { immediate: true },
-)
 </script>

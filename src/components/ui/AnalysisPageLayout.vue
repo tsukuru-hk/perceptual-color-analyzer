@@ -8,14 +8,29 @@
     <!-- 分析エリア：画像が1枚以上あるとき — タブバー + 2カラム（オリジナル / 分析結果） -->
     <div v-if="images.length > 0" class="mt-6 overflow-hidden rounded-xl border border-border">
       <ImageGalleryBar />
-      <div v-if="selectedImage" class="grid grid-cols-2 gap-6 bg-card p-4">
+      <!-- Split Pane モード：ドラッグで比率調整可能 -->
+      <SplitPane v-if="selectedImage && splitPane" :default-ratio="0.3" :min-ratio="0.15" :max-ratio="0.85" :class="[paneHeight, 'bg-card']">
+        <template #left>
+          <div class="h-full overflow-auto p-4">
+            <h3 class="mb-2 text-sm font-medium text-muted-foreground">オリジナル画像</h3>
+            <ImageCanvas :image-data="selectedImage.colorAwareImageData.imageData" />
+          </div>
+        </template>
+        <template #right>
+          <div class="relative h-full">
+            <slot :color-aware-image-data="selectedImage.colorAwareImageData" />
+          </div>
+        </template>
+      </SplitPane>
+      <!-- 通常モード：固定 2 カラム -->
+      <div v-else-if="selectedImage" class="grid grid-cols-2 gap-6 bg-card p-4">
         <div>
           <h3 class="mb-2 text-sm font-medium text-muted-foreground">オリジナル画像</h3>
-          <ImageCanvas :image-data="selectedImage.imageData" />
+          <ImageCanvas :image-data="selectedImage.colorAwareImageData.imageData" />
         </div>
         <div>
           <h3 v-if="analysisTitle" class="mb-2 text-sm font-medium text-muted-foreground">{{ analysisTitle }}</h3>
-          <slot :image-data="selectedImage.imageData" />
+          <slot :color-aware-image-data="selectedImage.colorAwareImageData" />
         </div>
       </div>
       <div v-if="loadProgress === 'loading'" class="bg-card p-6 text-sm text-muted-foreground">読み込み中...</div>
@@ -37,7 +52,7 @@
 
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { DropZone } from '@/components/ui'
+import { DropZone, SplitPane } from '@/components/ui'
 import ImageGalleryBar from '@/components/ui/ImageGalleryBar.vue'
 import ImageCanvas from '@/features/image-analysis/ImageCanvas.vue'
 import { useImageStore } from '@/composables/useImageStore'
@@ -53,8 +68,14 @@ withDefaults(defineProps<{
   placeholderIcon?: Component
   /** 画像未投入時のヒントテキスト */
   placeholderText?: string
+  /** Split Pane モード（ドラッグで比率調整可能な 2 ペイン） */
+  splitPane?: boolean
+  /** SplitPane の高さクラス（デフォルト: h-[70vh]） */
+  paneHeight?: string
 }>(), {
   placeholderText: '画像をアップロードすると分析結果が表示されます',
+  splitPane: false,
+  paneHeight: 'h-[70vh]',
 })
 
 const { images, selectedImage, loadProgress, addImage } = useImageStore()

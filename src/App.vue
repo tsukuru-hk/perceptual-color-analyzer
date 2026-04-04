@@ -5,12 +5,14 @@
     <Sidebar />
     <!-- ルートに応じたページ（分析・デザインシステムなど） -->
     <main class="flex-1 min-w-0 p-6 overflow-auto">
-      <router-view />
+      <ErrorBoundary>
+        <router-view />
+      </ErrorBoundary>
     </main>
     <Toaster />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Sidebar, Toaster } from '@/components/ui'
+import { Sidebar, Toaster, ErrorBoundary } from '@/components/ui'
 </script>

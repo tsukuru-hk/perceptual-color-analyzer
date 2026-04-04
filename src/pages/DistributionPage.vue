@@ -8,7 +8,7 @@
     placeholder-text="画像をアップロードすると色分布の統計チャートやパレット抽出結果が表示されます"
   >
     <!-- 分析本文：将来チャート等を配置（現状はプレースホルダー） -->
-    <template #default="{ imageData: _imageData }">
+    <template #default="{ colorAwareImageData: _colorAwareImageData }">
       <Card class="p-8 text-center text-muted-foreground">
         <BarChart3 class="mx-auto h-12 w-12 opacity-30" />
         <p class="mt-3 text-sm">散布図・ヒストグラム・色パレット抽出を実装予定</p>

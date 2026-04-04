@@ -46,8 +46,13 @@ const percentage = computed(() => Math.min((props.value / props.max) * 100, 100)
 const formattedValue = computed(() => props.value.toFixed(props.precision))
 
 async function copyValue() {
-  await navigator.clipboard.writeText(formattedValue.value)
-  copied.value = true
-  setTimeout(() => { copied.value = false }, 1500)
+  try {
+    await navigator.clipboard.writeText(formattedValue.value)
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 1500)
+  } catch {
+    // Clipboard API が使えない環境（非 HTTPS 等）では静かに失敗
+    console.warn('Clipboard API is not available')
+  }
 }
 </script>

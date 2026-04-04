@@ -8,7 +8,7 @@
     placeholder-text="画像をアップロードすると色相の分布や支配的な色相クラスタが表示されます"
   >
     <!-- 分析本文：将来色相マップ等を配置 -->
-    <template #default="{ imageData: _imageData }">
+    <template #default="{ colorAwareImageData: _colorAwareImageData }">
       <Card class="p-8 text-center text-muted-foreground">
         <Rainbow class="mx-auto h-12 w-12 opacity-30" />
         <p class="mt-3 text-sm">色相ホイール・色相マップ・支配的色相クラスタを実装予定</p>
