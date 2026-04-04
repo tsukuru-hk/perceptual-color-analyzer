@@ -1,24 +1,23 @@
 /**
- * 画像ファイルを読み込み、Canvas に描画した ImageData を返すユースケース。
+ * 画像ファイルを読み込み、Canvas に描画した ColorAwareImageData を返すユースケース。
  * Application層: インフラを組み合わせてシナリオを実行。
+ *
+ * 色分析の精度を保つため、リサイズせず原寸で読み込む。
+ * 補間によるピクセル混合を避けることで、元画像に忠実な色情報を保持する。
  */
 
 import type { Result } from '@/core/result';
-import { loadImageToImageData } from '@/infrastructure/imageLoader';
+import type { ColorSpace, ColorAwareImageData } from '@/domain/colorSpace';
+import { loadImageToColorAwareImageData } from '@/infrastructure/imageLoader';
 import type { ImageLoadError } from '@/infrastructure/imageLoader';
-
-const DEFAULT_MAX_WIDTH = 800;
-const DEFAULT_MAX_HEIGHT = 600;
 
 /**
  * @param file 画像ファイル
- * @param options maxWidth / maxHeight で描画サイズを指定（省略時 800×600）
+ * @param colorSpace 作業色空間
  */
 export async function loadImageUseCase(
   file: File,
-  options?: { maxWidth?: number; maxHeight?: number }
-): Promise<Result<ImageData, ImageLoadError>> {
-  const maxWidth = options?.maxWidth ?? DEFAULT_MAX_WIDTH;
-  const maxHeight = options?.maxHeight ?? DEFAULT_MAX_HEIGHT;
-  return loadImageToImageData(file, maxWidth, maxHeight);
+  colorSpace: ColorSpace,
+): Promise<Result<ColorAwareImageData, ImageLoadError>> {
+  return loadImageToColorAwareImageData(file, colorSpace);
 }

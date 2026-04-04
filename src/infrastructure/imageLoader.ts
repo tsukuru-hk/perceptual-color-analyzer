@@ -6,23 +6,24 @@
 import type { Result } from '@/core/result';
 import { success, failure } from '@/core/result';
 import { BaseError } from '@/core/result';
+import type { ColorSpace, ColorAwareImageData } from '@/domain/colorSpace';
 
 export type ImageLoadError = 'FileReadError' | 'CanvasError' | 'InvalidImage';
 
 /**
- * File を読み込み、指定サイズの Canvas に描画して ImageData を返す。
+ * File を読み込み、Canvas に描画して ColorAwareImageData を返す。
+ * Canvas の colorSpace オプションを使い、P3 画像を正しく読み取る。
+ * リサイズせず原寸で読み込むことで、補間による色のブレを防ぐ。
  * @param file 画像ファイル
- * @param maxWidth 描画先の最大幅 (px)
- * @param maxHeight 描画先の最大高さ (px)
+ * @param colorSpace 使用する作業色空間
  */
-export async function loadImageToImageData(
+export async function loadImageToColorAwareImageData(
   file: File,
-  maxWidth: number,
-  maxHeight: number
-): Promise<Result<ImageData, ImageLoadError>> {
+  colorSpace: ColorSpace,
+): Promise<Result<ColorAwareImageData, ImageLoadError>> {
   const img = await loadFileAsImage(file);
   if (img.isFailure()) return img;
-  return drawToCanvasAndGetImageData(img.value, maxWidth, maxHeight);
+  return drawToCanvasAndGetImageData(img.value, colorSpace);
 }
 
 /** @param file 読み込む画像ファイル */
@@ -53,19 +54,17 @@ function loadFileAsImage(
 
 /**
  * @param img デコード済みの画像要素
- * @param maxWidth 最大幅 (px)
- * @param maxHeight 最大高さ (px)
+ * @param colorSpace Canvas に適用する色空間
  */
 function drawToCanvasAndGetImageData(
   img: HTMLImageElement,
-  maxWidth: number,
-  maxHeight: number
-): Result<ImageData, ImageLoadError> {
+  colorSpace: ColorSpace,
+): Result<ColorAwareImageData, ImageLoadError> {
   const canvas = document.createElement('canvas');
-  const scale = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
-  canvas.width = Math.floor(img.width * scale);
-  canvas.height = Math.floor(img.height * scale);
-  const ctx = canvas.getContext('2d');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const canvasColorSpace = colorSpace === 'display-p3' ? 'display-p3' : 'srgb';
+  const ctx = canvas.getContext('2d', { colorSpace: canvasColorSpace });
   if (!ctx) {
     return failure(
       new BaseError<ImageLoadError>({
@@ -74,10 +73,10 @@ function drawToCanvasAndGetImageData(
       })
     );
   }
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
   try {
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return success(imageData);
+    return success({ imageData, colorSpace });
   } catch (error) {
     return failure(
       new BaseError<ImageLoadError>({
