@@ -1,5 +1,7 @@
 <template>
+  <!-- ページ：デザインシステム — 共通 UI コンポーネントの見本（分析フローとは別） -->
   <div class="space-y-10">
+    <!-- 見出し -->
     <div>
       <h1 class="text-2xl font-bold text-foreground">デザインシステム</h1>
       <p class="mt-1 text-sm text-muted-foreground">再利用可能なコンポーネント一覧</p>
@@ -243,7 +245,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <Button @click="toast({ title: '保存しました', variant: 'success' })">Success Toast</Button>
           <Button variant="destructive" @click="toast({ title: 'エラーが発生しました', description: 'ファイルを読み込めませんでした', variant: 'error' })">Error Toast</Button>
-          <Button variant="secondary" @click="toast({ title: 'ヒント', description: 'ピクセルをクリックすると OKLCH 値が表示されます', variant: 'info' })">Info Toast</Button>
+          <Button variant="secondary" @click="toast({ title: 'ヒント', description: '画像をアップロードすると分析が開始されます', variant: 'info' })">Info Toast</Button>
         </div>
       </Card>
     </section>

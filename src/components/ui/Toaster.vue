@@ -1,4 +1,5 @@
 <template>
+  <!-- グローバル通知：`useToast` のキューを body 直下に重ね描画 -->
   <Teleport to="body">
     <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
       <TransitionGroup

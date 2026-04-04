@@ -1,3 +1,6 @@
+/**
+ * エントリ：Vue アプリ生成、スタイル・ルータ適用、`#app` へマウント。
+ */
 import { createApp } from 'vue'
 import '@/assets/css/tailwind.css'
 import App from './App.vue'

@@ -1,3 +1,7 @@
+/**
+ * 彩度チャンネルをグレースケール画像へ変換（Culori OKLCH）。
+ * Infrastructure: ピクセルループと Canvas 非依存の純粋な ImageData 生成。
+ */
 import { oklch } from 'culori'
 import { type Result, success } from '@/core/result'
 
@@ -6,6 +10,7 @@ export type ChromaMapError = 'ConversionError'
 /**
  * 画像の各ピクセルの OKLCH chroma 値をグレースケールに変換した ImageData を生成する。
  * 最大 chroma で正規化し、彩度が高い部分ほど明るく表示される。
+ * @param imageData 入力のラスタ画像
  */
 export function generateChromaMap(
   imageData: ImageData,

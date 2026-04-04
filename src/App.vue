@@ -1,7 +1,10 @@
 <template>
+  <!-- アプリシェル：左ナビ + メイン（ルートごとのページ）+ グローバル通知 -->
   <div class="flex min-h-screen bg-background">
+    <!-- グローバルナビゲーション -->
     <Sidebar />
-    <main class="ml-14 flex-1 p-8">
+    <!-- ルートに応じたページ（分析・デザインシステムなど） -->
+    <main class="flex-1 min-w-0 p-6 overflow-auto">
       <router-view />
     </main>
     <Toaster />

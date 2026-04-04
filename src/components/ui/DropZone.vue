@@ -1,4 +1,5 @@
 <template>
+  <!-- ファイル入力：クリック／D&D で画像を選び検証後に親へ通知 -->
   <div
     :class="cn(
       'rounded-2xl p-8 text-center transition-colors cursor-pointer',
@@ -12,6 +13,7 @@
     @dragleave.prevent="dragState = 'idle'"
     @drop.prevent="onDrop"
   >
+    <!-- 非表示の file input（ラベル／外枠クリックで開く） -->
     <input
       ref="inputRef"
       type="file"
@@ -19,6 +21,7 @@
       class="hidden"
       @change="onInputChange"
     />
+    <!-- ヒント文とアイコン -->
     <div class="flex flex-col items-center gap-2">
       <component
         :is="dragState === 'dragover' ? FileUp : dragState === 'error' ? AlertCircle : Upload"
@@ -44,7 +47,9 @@ import { Upload, FileUp, AlertCircle } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 
 const props = withDefaults(defineProps<{
+  /** `<input type="file">` の accept（例: image/*） */
   accept?: string
+  /** 許容する最大ファイルサイズ（バイト） */
   maxSize?: number
 }>(), {
   accept: 'image/*',

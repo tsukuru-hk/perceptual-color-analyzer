@@ -1,3 +1,6 @@
+/**
+ * クライアントルーティング：分析各ページとデザインシステム。
+ */
 import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
