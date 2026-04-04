@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.1",
+    "@tresjs/cientos": "^5.7.0",
     "@tresjs/core": "^5.5.0",
     "@vueuse/motion": "^3.0.3",
     "class-variance-authority": "^0.7.1",
