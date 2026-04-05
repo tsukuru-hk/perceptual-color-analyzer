@@ -24,7 +24,7 @@ const props = defineProps<{
 const mesh = shallowRef<InstancedMesh | null>(null)
 
 const sphereGeo = new SphereGeometry(1, 8, 6)
-const material = new MeshBasicMaterial({ depthWrite: false })
+const material = new MeshBasicMaterial()
 
 function buildMesh(data: GamutPointCloudData): InstancedMesh {
   const im = new InstancedMesh(sphereGeo, material, data.count)
