@@ -1,7 +1,7 @@
 <template>
   <div class="absolute inset-0">
     <TresCanvas :clear-color="'#d4d4d4'">
-      <TresPerspectiveCamera :position="[6, 4, 6]" :fov="15" />
+      <TresPerspectiveCamera :position="[7, 5, 7]" :fov="20" />
       <OrbitControls
         :enable-damping="true"
         :damping-factor="0.08"

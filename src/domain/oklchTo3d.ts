@@ -18,13 +18,13 @@ export interface Point3D {
 export interface GamutScaleConfig {
   /** Chroma → 半径のスケール係数 (デフォルト: 5.0) */
   readonly chromaScale: number
-  /** Lightness → Y 軸のスケール係数 (デフォルト: 2.0) */
+  /** Lightness → Y 軸のスケール係数 (デフォルト: 3.2) */
   readonly lightnessScale: number
 }
 
 export const DEFAULT_GAMUT_SCALE: GamutScaleConfig = {
   chromaScale: 5.0,
-  lightnessScale: 2.0,
+  lightnessScale: 3.2,
 }
 
 const DEG_TO_RAD = Math.PI / 180
