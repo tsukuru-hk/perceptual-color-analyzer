@@ -11,7 +11,7 @@ import type { GamutPointCloudData } from '@/types/analysis'
 export type GamutPointCloudError = 'ConversionError'
 
 /** 生成する最大点数 */
-const MAX_POINTS = 1_000
+const MAX_POINTS = 20_000
 
 /**
  * 画像から OKLCH 3D ポイントクラウドを生成する。

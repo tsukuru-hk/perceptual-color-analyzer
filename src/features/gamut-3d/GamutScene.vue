@@ -1,6 +1,6 @@
 <template>
   <div class="absolute inset-0">
-    <TresCanvas :clear-color="'#d4d4d4'">
+    <TresCanvas :clear-color="'#a0a0a0'">
       <TresPerspectiveCamera :position="[7, 5, 7]" :fov="20" />
       <OrbitControls
         :enable-damping="true"
@@ -9,7 +9,7 @@
 
       <GamutPointCloud :data="pointCloudData" />
 
-      <GamutReferenceGrid />
+      <GamutReferenceGrid :color-space="colorSpace" />
 
     </TresCanvas>
   </div>
@@ -19,10 +19,14 @@
 import { TresCanvas } from '@tresjs/core'
 import { OrbitControls } from '@tresjs/cientos'
 import type { GamutPointCloudData } from '@/types/analysis'
+import type { ColorSpace } from '@/domain/colorSpace'
 import GamutPointCloud from './GamutPointCloud.vue'
 import GamutReferenceGrid from './GamutReferenceGrid.vue'
 
-defineProps<{
+withDefaults(defineProps<{
   pointCloudData: GamutPointCloudData | null
-}>()
+  colorSpace?: ColorSpace
+}>(), {
+  colorSpace: 'srgb',
+})
 </script>

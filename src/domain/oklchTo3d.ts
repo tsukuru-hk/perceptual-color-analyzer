@@ -23,7 +23,7 @@ export interface GamutScaleConfig {
 }
 
 export const DEFAULT_GAMUT_SCALE: GamutScaleConfig = {
-  chromaScale: 5.0,
+  chromaScale: 6.5,
   lightnessScale: 3.2,
 }
 

@@ -15,7 +15,7 @@ import {
 } from 'three'
 import type { GamutPointCloudData } from '@/types/analysis'
 
-const POINT_SIZE = 0.04
+const POINT_SIZE = 0.025
 
 const props = defineProps<{
   data: GamutPointCloudData | null

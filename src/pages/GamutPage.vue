@@ -12,6 +12,7 @@
       <GamutScene
         v-else-if="pointCloud(colorAwareImageData)"
         :point-cloud-data="pointCloud(colorAwareImageData)!"
+        :color-space="colorAwareImageData.colorSpace"
       />
       <AnalysisSpinner v-else />
     </template>
