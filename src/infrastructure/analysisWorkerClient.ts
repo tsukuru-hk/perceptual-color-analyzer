@@ -1,4 +1,4 @@
-import type { AnalysisRequest, AnalysisResponse } from './analysisWorkerProtocol'
+import type { AnalysisRequest, AnalysisResponse, AnalysisParams } from './analysisWorkerProtocol'
 import type { AnalysisKey } from '@/types/analysis'
 import type { ColorAwareImageData } from '@/domain/colorSpace'
 
@@ -49,6 +49,7 @@ export function requestAnalysis(
   imageId: string,
   analysisKey: AnalysisKey,
   source: ColorAwareImageData,
+  params?: AnalysisParams,
 ): { requestId: string; promise: Promise<AnalysisResponse> } {
   const requestId = crypto.randomUUID()
 
@@ -68,6 +69,7 @@ export function requestAnalysis(
     analysisKey,
     imageData: clonedData,
     colorSpace: source.colorSpace,
+    params,
   }
 
   getWorker().postMessage(msg, [clonedData.data.buffer])

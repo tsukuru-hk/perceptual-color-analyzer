@@ -1,6 +1,7 @@
 import { ref, shallowRef, computed } from 'vue'
 import type { ColorSpace, ColorAwareImageData } from '@/domain/colorSpace'
 import type { AnalysisKey, AnalysisResult, AnalysisError } from '@/types/analysis'
+import type { AnalysisParams } from '@/infrastructure/analysisWorkerProtocol'
 import { isAnalysisError } from '@/types/analysis'
 import { loadImageUseCase } from '@/application/useCase/loadImageUseCase'
 import { requestAnalysis, cancelByImageId } from '@/infrastructure/analysisWorkerClient'
@@ -125,7 +126,7 @@ export function useImageStore() {
    * キャッシュにあれば即返す。なければ Worker に依頼し null を返す。
    * Worker 完了時に reactive キャッシュが更新され、再レンダーでキャッシュヒットする。
    */
-  function getAnalysis<K extends AnalysisKey>(imageId: string, source: ColorAwareImageData, key: K): AnalysisResult[K] | null {
+  function getAnalysis<K extends AnalysisKey>(imageId: string, source: ColorAwareImageData, key: K, params?: AnalysisParams): AnalysisResult[K] | null {
     const cache = analysisCacheMap.value.get(imageId)
     if (cache && key in cache) {
       return cache[key] as AnalysisResult[K]
@@ -141,7 +142,7 @@ export function useImageStore() {
     nextInFlight.add(k)
     inFlightSet.value = nextInFlight
 
-    const { promise } = requestAnalysis(imageId, key, source)
+    const { promise } = requestAnalysis(imageId, key, source, params)
 
     promise.then((response) => {
       // in-flight から削除
@@ -156,6 +157,8 @@ export function useImageStore() {
           setCacheEntry(imageId, key, response.histogramData as AnalysisResult[K])
         } else if (response.gamutPointCloudData) {
           setCacheEntry(imageId, key, response.gamutPointCloudData as AnalysisResult[K])
+        } else if (response.colorClusterData) {
+          setCacheEntry(imageId, key, response.colorClusterData as AnalysisResult[K])
         }
       } else {
         // エラー状態をキャッシュに保存（無限スピナーを防止）
@@ -180,11 +183,26 @@ export function useImageStore() {
   function retryAnalysis(imageId: string, key: AnalysisKey): void {
     const cache = analysisCacheMap.value.get(imageId)
     if (cache && key in cache && isAnalysisError(cache[key])) {
+      invalidateAnalysis(imageId, key)
+    }
+  }
+
+  /** 指定分析のキャッシュを無効化し、次回 getAnalysis で再計算を促す */
+  function invalidateAnalysis(imageId: string, key: AnalysisKey): void {
+    const cache = analysisCacheMap.value.get(imageId)
+    if (cache && key in cache) {
       const newMap = new Map(analysisCacheMap.value)
       const entry = { ...newMap.get(imageId)! }
       delete entry[key]
       newMap.set(imageId, entry)
       analysisCacheMap.value = newMap
+    }
+    // in-flight も削除して再リクエスト可能にする
+    const k = inFlightKey(imageId, key)
+    if (inFlightSet.value.has(k)) {
+      const updated = new Set(inFlightSet.value)
+      updated.delete(k)
+      inFlightSet.value = updated
     }
   }
 
@@ -245,6 +263,7 @@ export function useImageStore() {
     isAnalysisLoading,
     isAnalysisError,
     retryAnalysis,
+    invalidateAnalysis,
     colorAwareImageData,
     canAddMore,
     loadProgress,
