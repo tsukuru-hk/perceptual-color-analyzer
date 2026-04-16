@@ -5,6 +5,7 @@ import { generateChromaHistogram } from './chromaHistogramGenerator'
 import { generateLightnessMap } from './lightnessMapGenerator'
 import { generateLightnessHistogram } from './lightnessHistogramGenerator'
 import { generateGamutPointCloud } from './gamutPointCloudGenerator'
+import { generateColorClusters } from './colorClusterGenerator'
 import type { AnalysisRequest, AnalysisResponse } from './analysisWorkerProtocol'
 import type { ColorAwareImageData } from '../domain/colorSpace'
 
@@ -63,6 +64,20 @@ self.onmessage = (e: MessageEvent<AnalysisRequest>) => {
         transferList.push(r.value.positions.buffer, r.value.colors.buffer)
       } else {
         response = { requestId, imageId, analysisKey, status: 'error', errorMessage: r.error.message }
+      }
+      break
+    }
+    case 'colorClustering': {
+      try {
+        const clusterK = e.data.params?.clusterK
+        const r = generateColorClusters(source, clusterK)
+        if (r.isSuccess()) {
+          response = { requestId, imageId, analysisKey, status: 'success', colorClusterData: r.value }
+        } else {
+          response = { requestId, imageId, analysisKey, status: 'error', errorMessage: r.error.message }
+        }
+      } catch (err) {
+        response = { requestId, imageId, analysisKey, status: 'error', errorMessage: String(err) }
       }
       break
     }
