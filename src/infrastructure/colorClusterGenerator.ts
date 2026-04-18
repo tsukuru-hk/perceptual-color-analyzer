@@ -1,11 +1,14 @@
 /**
- * 画像ピクセルからカラークラスタリング結果を生成する。
+ * 画像ピクセルからカラーパレットを抽出する。
  * Infrastructure: Culori 経由の色変換に依存。
+ *
+ * 色相×明度×彩度の細粒度グリッドで色空間を分割し、
+ * 粒度パラメータに応じて自動的にパレット数を決定する。
  */
 import { type Result, success } from '@/core/result'
 import type { ColorAwareImageData } from '@/domain/colorSpace'
 import type { ColorClusterResult, ColorSample, ColorCluster } from '@/domain/colorCluster'
-import { kMeansOklch, type KMeansPoint } from '@/domain/kMeansOklch'
+import { extractPalette, type PalettePoint } from '@/domain/paletteExtractor'
 import { createPixelConverter } from '@/infrastructure/colorSpaceConverter'
 import { converter, clampChroma, type Rgb } from 'culori'
 
@@ -14,7 +17,7 @@ export type ColorClusterError = 'ConversionError'
 /** サンプリングする最大ピクセル数 */
 const MAX_SAMPLES = 10_000
 
-/** サブカラーの合計目標数ベース（k に応じてスケール） */
+/** サブカラーの合計目標数ベース */
 const BASE_TOTAL_SAMPLES = 200
 
 /** 1 クラスタあたりの最低サブカラー数 */
@@ -37,14 +40,14 @@ function oklchToRgb255(l: number, c: number, h: number): { r: number; g: number;
 }
 
 /**
- * 画像からカラークラスタリング結果を生成する。
+ * 画像からカラーパレットを抽出する。
  *
  * @param source 色空間情報付き入力画像
- * @param k クラスタ数（デフォルト: 12）
+ * @param maxColors パレット色数の上限 (0=自動決定, デフォルト: 0)
  */
 export function generateColorClusters(
   source: ColorAwareImageData,
-  k: number = 12,
+  maxColors: number = 0,
 ): Result<ColorClusterResult, ColorClusterError> {
   const { data, width, height } = source.imageData
   const totalPixels = width * height
@@ -53,8 +56,8 @@ export function generateColorClusters(
   // stride ベースサンプリング
   const stride = Math.max(1, Math.floor(totalPixels / MAX_SAMPLES))
 
-  // Phase 1: ピクセルをサンプリングして KMeansPoint 配列を構築
-  const points: KMeansPoint[] = []
+  // Phase 1: ピクセルをサンプリングして PalettePoint 配列を構築
+  const points: PalettePoint[] = []
   const rgbValues: Array<{ r: number; g: number; b: number }> = []
 
   for (let i = 0; i < totalPixels; i += stride) {
@@ -69,7 +72,7 @@ export function generateColorClusters(
 
     points.push({
       oklch: { lightness: oklch.l, chroma: oklch.c, hue: oklch.h },
-      weight: stride, // 各サンプルが stride ピクセル分を代表
+      weight: stride,
     })
     rgbValues.push({ r, g, b })
   }
@@ -79,74 +82,44 @@ export function generateColorClusters(
       clusters: [],
       samples: [],
       totalPixels,
-      k,
+      k: 0,
     })
   }
 
-  // Phase 2: K-means 実行
-  const { assignments, centroids } = kMeansOklch(points, { k })
+  // Phase 2: パレット抽出（maxColors=0 なら自動決定）
+  const palette = extractPalette(points, maxColors)
 
-  // Phase 3: クラスタごとのピクセル数を集計
-  const clusterPixelCounts = new Float64Array(centroids.length)
-  for (let i = 0; i < points.length; i++) {
-    clusterPixelCounts[assignments[i]!] += points[i]!.weight
-  }
-  const totalCounted = clusterPixelCounts.reduce((a, b) => a + b, 0)
+  // Phase 3: ColorCluster 配列を構築（palette は既に totalWeight 降順）
+  const totalCounted = palette.reduce((sum, e) => sum + e.totalWeight, 0)
 
-  // Phase 4: ratio 降順のソート順を生成（元のクラスタID → ソート後の新ID）
-  const sortedIndices = Array.from({ length: centroids.length }, (_, i) => i)
-    .sort((a, b) => clusterPixelCounts[b]! - clusterPixelCounts[a]!)
-
-  // oldId → newId のマッピング
-  const idRemap = new Int32Array(centroids.length)
-  for (let newId = 0; newId < sortedIndices.length; newId++) {
-    idRemap[sortedIndices[newId]!] = newId
-  }
-
-  // Phase 5: ColorCluster 配列を構築
-  const clusters: ColorCluster[] = sortedIndices.map((oldId, newId) => {
-    const c = centroids[oldId]!
+  const clusters: ColorCluster[] = palette.map((entry, id) => {
+    const c = entry.centroid
     return {
-      id: newId,
+      id,
       centroid: c,
       centroidRgb: oklchToRgb255(c.lightness, c.chroma, c.hue),
-      pixelCount: clusterPixelCounts[oldId]!,
-      ratio: totalCounted > 0 ? clusterPixelCounts[oldId]! / totalCounted : 0,
+      pixelCount: entry.totalWeight,
+      ratio: totalCounted > 0 ? entry.totalWeight / totalCounted : 0,
     }
   })
 
-  // Phase 6: サンプル色を構築（ratio に比例して合計 ~targetTotalSamples を分配）
-  // k が大きいほどサンプル総数を増やす（最低 k*2 は確保）
-  const targetTotalSamples = Math.max(BASE_TOTAL_SAMPLES, k * 3)
-  // クラスタごとにサンプルインデックスを集める
-  const clusterSampleIndices: number[][] = Array.from({ length: centroids.length }, () => [])
-  for (let i = 0; i < points.length; i++) {
-    clusterSampleIndices[assignments[i]!]!.push(i)
-  }
+  // Phase 4: サンプル色を構築
+  const paletteSize = palette.length
+  const targetTotalSamples = Math.max(BASE_TOTAL_SAMPLES, paletteSize * 3)
 
-  // 各クラスタの割り当てサンプル数を ratio に比例して計算
-  const sampleBudgets = new Map<number, number>()
-  let budgetUsed = 0
-  for (const cluster of clusters) {
-    const oldId = sortedIndices[cluster.id]!
-    const indices = clusterSampleIndices[oldId]!
+  const samples: ColorSample[] = []
+
+  for (let clusterId = 0; clusterId < palette.length; clusterId++) {
+    const entry = palette[clusterId]!
+    const indices = entry.memberIndices
     if (indices.length === 0) continue
+
+    const cluster = clusters[clusterId]!
     const budget = Math.max(
       MIN_SAMPLES_PER_CLUSTER,
       Math.round(cluster.ratio * targetTotalSamples),
     )
-    const capped = Math.min(budget, indices.length)
-    sampleBudgets.set(cluster.id, capped)
-    budgetUsed += capped
-  }
-
-  const samples: ColorSample[] = []
-
-  for (let oldId = 0; oldId < centroids.length; oldId++) {
-    const indices = clusterSampleIndices[oldId]!
-    if (indices.length === 0) continue
-    const newClusterId = idRemap[oldId]!
-    const maxSub = sampleBudgets.get(newClusterId) ?? MIN_SAMPLES_PER_CLUSTER
+    const maxSub = Math.min(budget, indices.length)
 
     // 均等にサブサンプリング
     const subStride = Math.max(1, Math.floor(indices.length / maxSub))
@@ -156,16 +129,15 @@ export function generateColorClusters(
       const p = points[idx]!
       const rgb = rgbValues[idx]!
       samples.push({
-        // ピクセルインデックスをIDに使用 — k が変わっても同一ピクセルは同一ID
         id: idx,
         oklch: p.oklch,
         rgb,
         pixelCount: p.weight,
-        clusterId: newClusterId,
+        clusterId,
       })
       subCount++
     }
   }
 
-  return success({ clusters, samples, totalPixels, k })
+  return success({ clusters, samples, totalPixels, k: paletteSize })
 }

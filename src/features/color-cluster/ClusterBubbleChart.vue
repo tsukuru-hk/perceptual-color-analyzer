@@ -80,8 +80,13 @@ interface RenderCircle {
   opacity: number
 }
 
-const renderGroups = ref<RenderCircle[]>([])
-const renderBubbles = ref<RenderCircle[]>([])
+/** グループとバブルをまとめて1回の代入で更新し、描画タイミングを同期する */
+const renderState = ref<{ groups: RenderCircle[]; bubbles: RenderCircle[] }>({
+  groups: [],
+  bubbles: [],
+})
+const renderGroups = computed(() => renderState.value.groups)
+const renderBubbles = computed(() => renderState.value.bubbles)
 
 function rgbToFill(rgb: { r: number; g: number; b: number }): string {
   return `rgb(${rgb.r},${rgb.g},${rgb.b})`
@@ -114,13 +119,14 @@ const prevClusterCentroids = new Map<number, OklchValue>()
 /** 現在の clusterId → stableId マッピング */
 const clusterStableIdMap = new Map<number, number>()
 
-/** OKLCH 距離の二乗（hue は円環差） */
+/** OKLCH 距離の二乗（直交座標ベース ΔEok） */
 function oklchDistSq(a: OklchValue, b: OklchValue): number {
   const dL = a.lightness - b.lightness
-  const dC = a.chroma - b.chroma
-  let dH = Math.abs(a.hue - b.hue)
-  if (dH > 180) dH = 360 - dH
-  return dL * dL + dC * dC + (dH / 180) * (dH / 180)
+  const aHrad = (a.hue * Math.PI) / 180
+  const bHrad = (b.hue * Math.PI) / 180
+  const da = a.chroma * Math.cos(aHrad) - b.chroma * Math.cos(bHrad)
+  const db = a.chroma * Math.sin(aHrad) - b.chroma * Math.sin(bHrad)
+  return dL * dL + da * da + db * db
 }
 
 /**
@@ -290,17 +296,15 @@ const layout = computed<ClusterGroup[]>(() => {
 // ─── 描画リスト差分更新 ───
 
 watch(layout, (newLayout) => {
-  // --- グループ（安定IDをキーにする） ---
-  const newGroupByStableId = new Map<number, ClusterGroup>()
-  for (const g of newLayout) newGroupByStableId.set(g.stableId, g)
+  const prev = renderState.value
 
+  // --- グループ（安定IDをキーにする） ---
   const prevGroupKeys = new Set(
-    renderGroups.value.filter((g) => g.opacity > 0).map((g) => g.key),
+    prev.groups.filter((g) => g.opacity > 0).map((g) => g.key),
   )
-  const nextGroupKeys = new Set(newGroupByStableId.keys())
+  const nextGroupKeys = new Set(newLayout.map((g) => g.stableId))
 
   const nextGroups: RenderCircle[] = []
-
   for (const g of newLayout) {
     const isNew = !prevGroupKeys.has(g.stableId)
     nextGroups.push({
@@ -312,25 +316,20 @@ watch(layout, (newLayout) => {
       opacity: isNew ? 0 : 0.92,
     })
   }
-
-  // 退場
-  for (const prev of renderGroups.value) {
-    if (!nextGroupKeys.has(prev.key) && prev.opacity > 0) {
-      nextGroups.push({ ...prev, opacity: 0 })
+  for (const p of prev.groups) {
+    if (!nextGroupKeys.has(p.key) && p.opacity > 0) {
+      nextGroups.push({ ...p, opacity: 0 })
     }
   }
 
-  renderGroups.value = nextGroups
-
-  // --- 個別バブル（sampleId = ピクセルインデックスで安定） ---
+  // --- 個別バブル ---
   const allBubbles = newLayout.flatMap((g) => g.bubbles)
   const prevBubbleKeys = new Set(
-    renderBubbles.value.filter((b) => b.opacity > 0).map((b) => b.key),
+    prev.bubbles.filter((b) => b.opacity > 0).map((b) => b.key),
   )
   const nextBubbleKeys = new Set(allBubbles.map((b) => b.sampleId))
 
   const nextBubbles: RenderCircle[] = []
-
   for (const b of allBubbles) {
     const isNew = !prevBubbleKeys.has(b.sampleId)
     nextBubbles.push({
@@ -342,36 +341,42 @@ watch(layout, (newLayout) => {
       opacity: isNew ? 0 : 1,
     })
   }
-
-  for (const prev of renderBubbles.value) {
-    if (!nextBubbleKeys.has(prev.key) && prev.opacity > 0) {
-      nextBubbles.push({ ...prev, opacity: 0 })
+  for (const p of prev.bubbles) {
+    if (!nextBubbleKeys.has(p.key) && p.opacity > 0) {
+      nextBubbles.push({ ...p, opacity: 0 })
     }
   }
 
-  renderBubbles.value = nextBubbles
+  // グループとバブルを同時に更新 → 同一フレームで描画
+  renderState.value = { groups: nextGroups, bubbles: nextBubbles }
 
-  // フェードイン: DOM挿入後に opacity をターゲット値にセット
+  // フェードイン: DOM挿入後に opacity をターゲット値に一括セット
   nextTick(() => {
-    renderGroups.value = renderGroups.value.map((g) =>
-      g.opacity === 0 && nextGroupKeys.has(g.key)
-        ? { ...g, opacity: 0.92 }
-        : g,
-    )
-    renderBubbles.value = renderBubbles.value.map((b) =>
-      b.opacity === 0 && nextBubbleKeys.has(b.key)
-        ? { ...b, opacity: 1 }
-        : b,
-    )
+    const cur = renderState.value
+    renderState.value = {
+      groups: cur.groups.map((g) =>
+        g.opacity === 0 && nextGroupKeys.has(g.key)
+          ? { ...g, opacity: 0.92 }
+          : g,
+      ),
+      bubbles: cur.bubbles.map((b) =>
+        b.opacity === 0 && nextBubbleKeys.has(b.key)
+          ? { ...b, opacity: 1 }
+          : b,
+      ),
+    }
 
     // フェードアウト完了後に退場要素を除去
     setTimeout(() => {
-      renderGroups.value = renderGroups.value.filter(
-        (g) => g.opacity > 0 || nextGroupKeys.has(g.key),
-      )
-      renderBubbles.value = renderBubbles.value.filter(
-        (b) => b.opacity > 0 || nextBubbleKeys.has(b.key),
-      )
+      const c = renderState.value
+      renderState.value = {
+        groups: c.groups.filter(
+          (g) => g.opacity > 0 || nextGroupKeys.has(g.key),
+        ),
+        bubbles: c.bubbles.filter(
+          (b) => b.opacity > 0 || nextBubbleKeys.has(b.key),
+        ),
+      }
     }, TRANSITION_MS)
   })
 }, { immediate: true })

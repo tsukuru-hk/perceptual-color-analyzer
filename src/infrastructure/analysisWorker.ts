@@ -69,8 +69,8 @@ self.onmessage = (e: MessageEvent<AnalysisRequest>) => {
     }
     case 'colorClustering': {
       try {
-        const clusterK = e.data.params?.clusterK
-        const r = generateColorClusters(source, clusterK)
+        const paletteSize = e.data.params?.paletteSize
+        const r = generateColorClusters(source, paletteSize)
         if (r.isSuccess()) {
           response = { requestId, imageId, analysisKey, status: 'success', colorClusterData: r.value }
         } else {

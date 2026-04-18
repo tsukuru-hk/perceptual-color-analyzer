@@ -5,8 +5,8 @@ import type { ColorClusterResult } from '@/domain/colorCluster'
 
 /** 分析種別ごとのパラメータ */
 export interface AnalysisParams {
-  /** colorClustering 用: クラスタ数 k */
-  clusterK?: number
+  /** colorClustering 用: パレット色数 (0=自動) */
+  paletteSize?: number
 }
 
 /** メインスレッド → Worker */

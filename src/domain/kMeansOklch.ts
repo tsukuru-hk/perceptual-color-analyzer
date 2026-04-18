@@ -2,8 +2,12 @@
  * OKLCH 空間での K-means クラスタリング。
  * 純粋関数のみで構成し、Worker・メインスレッド双方で使用可能。
  *
- * Hue は円環（0°≈360°）のため角度差を考慮した距離関数を使う。
- * 無彩色に近いピクセルは hue が不安定なため、chroma に比例した重みづけを行う。
+ * 距離関数は OKLAB の ΔEok（L, a, b のユークリッド距離）を使用。
+ * OKLAB は ΔL, Δa, Δb を等倍で比較したときに知覚均一になるよう設計されており、
+ * 追加のスケーリングなしで「知覚的に似た色」を正しくグルーピングできる。
+ *
+ * OKLCH → OKLAB 変換: a = C·cos(H), b = C·sin(H)
+ * これにより低彩度で hue が不安定な場合も a/b 差が自然に縮小する。
  */
 
 import type { OklchValue } from './oklch'
@@ -37,24 +41,20 @@ export interface KMeansResult {
 }
 
 /**
- * OKLCH 空間での距離の二乗を計算する。
- * Hue の角度差に対して chroma ベースの重みをかける。
+ * OKLAB 色差 ΔEok の二乗を計算する。
+ *
+ * OKLCH を直交座標 (L, a, b) に変換してユークリッド距離を取る。
+ * OKLAB の設計上、L/a/b は等倍で知覚均一なのでスケーリング不要。
  */
 function oklchDistanceSq(a: OklchValue, b: OklchValue): number {
   const dL = a.lightness - b.lightness
-  const dC = a.chroma - b.chroma
 
-  let dH = Math.abs(a.hue - b.hue)
-  if (dH > 180) dH = 360 - dH
-  // hue を radian 的なスケールに（360° → ~1.0 のレンジにする）
-  const dHNorm = dH / 180
+  const aHrad = (a.hue * Math.PI) / 180
+  const bHrad = (b.hue * Math.PI) / 180
+  const da = a.chroma * Math.cos(aHrad) - b.chroma * Math.cos(bHrad)
+  const db = a.chroma * Math.sin(aHrad) - b.chroma * Math.sin(bHrad)
 
-  // 無彩色に近いほど hue 差を無視する重み
-  const avgC = (a.chroma + b.chroma) / 2
-  // chroma のスケール: 一般的な sRGB で 0〜0.32 程度 → 1.0 に正規化
-  const hueWeight = Math.min(avgC / 0.15, 1.0)
-
-  return dL * dL + dC * dC + hueWeight * dHNorm * dHNorm
+  return dL * dL + da * da + db * db
 }
 
 /**
