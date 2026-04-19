@@ -19,11 +19,23 @@
         <HueTerrainChart
           :data="hueResult"
           :active-band="activeBand"
+          :log-scale="logScale"
           class="h-full w-full"
         />
-        <!-- オーバーレイ UI -->
-        <div class="absolute right-3 top-3 z-10">
+        <!-- オーバーレイ UI 左上 -->
+        <div class="absolute left-3 top-3 z-10 flex flex-col gap-2">
           <LightnessBandToggle v-model="activeBand" />
+          <LightnessBandPreview
+            v-if="selectedImage"
+            :source="selectedImage.colorAwareImageData"
+            :active-band="activeBand"
+            class="shadow-md"
+          />
+        </div>
+        <!-- オーバーレイ UI 右上: Log トグル -->
+        <div class="absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-lg border border-white/20 bg-black/40 px-2 py-1 backdrop-blur-sm">
+          <span class="text-[10px] text-white/70 select-none">Log</span>
+          <Toggle v-model="logScale" />
         </div>
       </template>
       <AnalysisSpinner v-else />
@@ -35,8 +47,8 @@
 import { computed, ref } from 'vue'
 import { Rainbow } from 'lucide-vue-next'
 import AnalysisPageLayout from '@/components/ui/AnalysisPageLayout.vue'
-import { AnalysisSpinner, AnalysisErrorCard } from '@/components/ui'
-import { HueTerrainChart, LightnessBandToggle } from '@/features/hue-analysis'
+import { AnalysisSpinner, AnalysisErrorCard, Toggle } from '@/components/ui'
+import { HueTerrainChart, LightnessBandPreview, LightnessBandToggle } from '@/features/hue-analysis'
 import { isAnalysisError } from '@/types/analysis'
 import type { HueAnalysisResult } from '@/types/hueAnalysis'
 import { useImageStore } from '@/composables/useImageStore'
@@ -46,6 +58,7 @@ const { selectedImage, getAnalysis, retryAnalysis } = useImageStore()
 const imageId = computed(() => selectedImage.value?.id ?? '')
 
 const activeBand = ref<'all' | 'dark' | 'mid' | 'light'>('all')
+const logScale = ref(false)
 
 // 色相分析
 const rawHueResult = computed(() => {
