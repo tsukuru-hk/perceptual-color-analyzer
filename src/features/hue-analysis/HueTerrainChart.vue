@@ -21,20 +21,28 @@
         :max-distance="12"
       />
 
-      <!-- 白い地面ディスク -->
-      <primitive v-if="groundMesh" :object="groundMesh" />
+      <TresGroup :position-y="SCENE_Y_OFFSET">
+        <!-- 白い地面ディスク -->
+        <primitive v-if="groundMesh" :object="groundMesh" />
 
-      <!-- 蜘蛛の巣グリッド（色付き同心円 + 放射線） -->
-      <primitive v-if="gridLines" :object="gridLines" />
+        <!-- 蜘蛛の巣グリッド（色付き同心円 + 放射線） -->
+        <primitive v-if="gridLines" :object="gridLines" />
 
-      <!-- 地形メッシュ -->
-      <primitive :object="terrainMesh" />
+        <!-- 地形メッシュ -->
+        <primitive :object="terrainMesh" />
 
-      <!-- 地形ワイヤーフレーム -->
-      <primitive v-if="terrainWire" :object="terrainWire" />
+        <!-- 地形ワイヤーフレーム -->
+        <primitive v-if="terrainWire" :object="terrainWire" />
 
-      <!-- 外周の色相環リング（土星リング風） -->
-      <primitive v-if="hueRingMesh" :object="hueRingMesh" />
+        <!-- 外周の色相環リング（土星リング風） -->
+        <primitive v-if="hueRingMesh" :object="hueRingMesh" />
+
+        <!-- リファレンスグリッド（等彩度線 + 等高線 + ドット） -->
+        <primitive v-if="refGrid" :object="refGrid" />
+
+        <!-- 中心軸線 -->
+        <primitive v-if="centerAxis" :object="centerAxis" />
+      </TresGroup>
     </TresCanvas>
 
     <!-- カメラリセットボタン -->
@@ -60,10 +68,14 @@ import { OrbitControls } from '@tresjs/cientos'
 import {
   BufferGeometry,
   Float32BufferAttribute,
+  Group,
+  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
   LineSegments,
   LineBasicMaterial,
+  SphereGeometry,
+  Matrix4,
   WireframeGeometry,
   DoubleSide,
   SRGBColorSpace,
@@ -77,11 +89,14 @@ const props = defineProps<{
   data: HueAnalysisResult
   activeBand: 'all' | 'dark' | 'mid' | 'light'
   height?: number
+  logScale?: boolean
 }>()
 
 // === カメラ（永続オブジェクト — バンド切替時にリセットされない） ===
-const INITIAL_CAM_POS = new Vector3(3, 3.5, 3)
+const INITIAL_CAM_POS = new Vector3(4, 1.5, 4)
 const INITIAL_CAM_TARGET = new Vector3(0, 0, 0)
+/** シーン全体の Y オフセット（地平面を画面下寄りにする） */
+const SCENE_Y_OFFSET = -0.5
 
 const camera = new PerspectiveCamera(35, 1, 0.1, 100)
 camera.position.copy(INITIAL_CAM_POS)
@@ -183,6 +198,9 @@ const terrainWire = shallowRef<LineSegments | null>(null)
 const groundMesh = shallowRef<Mesh | null>(null)
 const gridLines = shallowRef<LineSegments | null>(null)
 const hueRingMesh = shallowRef<Mesh | null>(null)
+const centerAxis = shallowRef<LineSegments | null>(null)
+const refGrid = shallowRef<Group | null>(null)
+const dotSphereGeo = new SphereGeometry(1, 6, 4)
 
 // === 地形メッシュ ===
 /** 明度帯に応じた色の明度スケーリング係数 */
@@ -195,17 +213,20 @@ function bandLightnessScale(): number {
   }
 }
 
-/** 明度帯に応じた地面の基底色 */
+/** 明度帯に応じた地面の基底色（新しい Color を返す — buildTerrain で baseGround として保持される） */
 function bandBaseColor(): Color {
-  const c = new Color()
   switch (props.activeBand) {
-    case 'dark': c.setRGB(0.25, 0.25, 0.28, SRGBColorSpace); break
-    case 'mid': c.setRGB(0.6, 0.6, 0.62, SRGBColorSpace); break
-    case 'light': c.setRGB(0.95, 0.95, 0.95, SRGBColorSpace); break
-    default: c.setRGB(0.95, 0.95, 0.95, SRGBColorSpace); break
+    case 'dark': return new Color().setRGB(0.25, 0.25, 0.28, SRGBColorSpace)
+    case 'mid': return new Color().setRGB(0.6, 0.6, 0.62, SRGBColorSpace)
+    case 'light': return new Color().setRGB(0.95, 0.95, 0.95, SRGBColorSpace)
+    default: return new Color().setRGB(0.95, 0.95, 0.95, SRGBColorSpace)
   }
-  return c
 }
+
+// 再利用用の一時オブジェクト（アロケーション削減）
+const _tmpColor = new Color()
+const _tmpBC = new Color()
+const _tmpHSL = { h: 0, s: 0, l: 0 }
 
 function buildTerrain() {
   const { hueBinCount, chromaBinCount, wheelColors, gamutMaxChroma, maxChroma } = props.data
@@ -224,19 +245,18 @@ function buildTerrain() {
     const hueNorm = ai / angSegs
     const theta = hueNorm * Math.PI * 2
     const maxR = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm)
-    // この色相でのガマット最大彩度
     const gamutC = sampleGamutMaxChroma(gamutMaxChroma, hueNorm)
     for (let ri = 0; ri <= radSegs; ri++) {
-      const chromaNorm = ri / radSegs  // 0-1 はガマット境界に対する比率
+      const chromaNorm = ri / radSegs
       const radius = chromaNorm * maxR
-      // 密度グリッドは maxChroma (画像内最大) で正規化されている
-      // chromaNorm をガマット基準 → 画像基準にリマップ
       const actualChroma = chromaNorm * gamutC
       const densityChromaNorm = maxChroma > 0 ? actualChroma / maxChroma : 0
-      // データ範囲外（actualChroma > maxChroma）では密度 0
-      const density = densityChromaNorm > 1.0
+      const rawDensity = densityChromaNorm > 1.0
         ? 0
         : sampleDensity(densityGrid, hueBinCount, chromaBinCount, hueNorm, densityChromaNorm)
+      const density = props.logScale && rawDensity > 0
+        ? Math.log1p(rawDensity * 100) / Math.log1p(100)
+        : rawDensity
       const height = density * HEIGHT_SCALE
 
       const vi = ai * (radSegs + 1) + ri
@@ -245,23 +265,17 @@ function buildTerrain() {
       positions[vi3 + 1] = height
       positions[vi3 + 2] = radius * Math.sin(theta)
 
-      // 色: 常にうっすらカラーホイールの色を敷き、密度が高い部分はより鮮やかに
       const baseColor = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, densityChromaNorm)
-      const color = new Color()
-      const bc = new Color()
-      bc.setRGB(baseColor.r / 255, baseColor.g / 255, baseColor.b / 255, SRGBColorSpace)
-      // 明度帯に応じてスケーリング
-      const hsl = { h: 0, s: 0, l: 0 }
-      bc.getHSL(hsl)
-      hsl.l = Math.min(1, hsl.l * lScale)
-      bc.setHSL(hsl.h, hsl.s, hsl.l)
-      // density > 0 なら即座にがっつり色を塗る
+      _tmpBC.setRGB(baseColor.r / 255, baseColor.g / 255, baseColor.b / 255, SRGBColorSpace)
+      _tmpBC.getHSL(_tmpHSL)
+      _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
+      _tmpBC.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
       const blend = density > 0.001 ? 1.0 : chromaNorm * 0.25
-      color.copy(baseGround).lerp(bc, blend)
+      _tmpColor.copy(baseGround).lerp(_tmpBC, blend)
 
-      colors[vi3] = color.r
-      colors[vi3 + 1] = color.g
-      colors[vi3 + 2] = color.b
+      colors[vi3] = _tmpColor.r
+      colors[vi3 + 1] = _tmpColor.g
+      colors[vi3 + 2] = _tmpColor.b
     }
   }
 
@@ -347,11 +361,10 @@ function buildGrid() {
 
       const c1 = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm1, chromaNorm)
       const c2 = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm2, chromaNorm)
-      const col1 = new Color()
-      const col2 = new Color()
-      col1.setRGB(c1.r / 255, c1.g / 255, c1.b / 255, SRGBColorSpace)
-      col2.setRGB(c2.r / 255, c2.g / 255, c2.b / 255, SRGBColorSpace)
-      lineColors.push(col1.r, col1.g, col1.b, col2.r, col2.g, col2.b)
+      _tmpColor.setRGB(c1.r / 255, c1.g / 255, c1.b / 255, SRGBColorSpace)
+      const r1c = _tmpColor.r, g1c = _tmpColor.g, b1c = _tmpColor.b
+      _tmpColor.setRGB(c2.r / 255, c2.g / 255, c2.b / 255, SRGBColorSpace)
+      lineColors.push(r1c, g1c, b1c, _tmpColor.r, _tmpColor.g, _tmpColor.b)
     }
   }
 
@@ -368,11 +381,10 @@ function buildGrid() {
 
     const cInner = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, 0.1)
     const cOuter = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, 0.9)
-    const col1 = new Color()
-    const col2 = new Color()
-    col1.setRGB(cInner.r / 255, cInner.g / 255, cInner.b / 255, SRGBColorSpace)
-    col2.setRGB(cOuter.r / 255, cOuter.g / 255, cOuter.b / 255, SRGBColorSpace)
-    lineColors.push(col1.r, col1.g, col1.b, col2.r, col2.g, col2.b)
+    _tmpColor.setRGB(cInner.r / 255, cInner.g / 255, cInner.b / 255, SRGBColorSpace)
+    const ric = _tmpColor.r, gic = _tmpColor.g, bic = _tmpColor.b
+    _tmpColor.setRGB(cOuter.r / 255, cOuter.g / 255, cOuter.b / 255, SRGBColorSpace)
+    lineColors.push(ric, gic, bic, _tmpColor.r, _tmpColor.g, _tmpColor.b)
   }
 
   const geo = new BufferGeometry()
@@ -398,11 +410,13 @@ function buildHueRing() {
     const hueNorm = i / segs
     const theta = hueNorm * Math.PI * 2
 
-    // 高彩度の色相環色
+    // 高彩度の色相環色（明度帯に応じてスケーリング）
     const sectorIdx = Math.floor(hueNorm * hueBinCount) % hueBinCount
     const rgb = props.data.ringColors[sectorIdx] ?? { r: 128, g: 128, b: 128 }
-    const color = new Color()
-    color.setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace)
+    _tmpColor.setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace)
+    _tmpColor.getHSL(_tmpHSL)
+    _tmpHSL.l = Math.min(1, _tmpHSL.l * bandLightnessScale())
+    _tmpColor.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
 
     const baseR = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm)
     const ringInner = baseR + RING_OFFSET
@@ -413,18 +427,18 @@ function buildHueRing() {
     positions[vi * 3] = ringInner * Math.cos(theta)
     positions[vi * 3 + 1] = 0
     positions[vi * 3 + 2] = ringInner * Math.sin(theta)
-    colors[vi * 3] = color.r
-    colors[vi * 3 + 1] = color.g
-    colors[vi * 3 + 2] = color.b
+    colors[vi * 3] = _tmpColor.r
+    colors[vi * 3 + 1] = _tmpColor.g
+    colors[vi * 3 + 2] = _tmpColor.b
 
     // outer vertex
     const vo = vi + 1
     positions[vo * 3] = ringOuter * Math.cos(theta)
     positions[vo * 3 + 1] = 0
     positions[vo * 3 + 2] = ringOuter * Math.sin(theta)
-    colors[vo * 3] = color.r
-    colors[vo * 3 + 1] = color.g
-    colors[vo * 3 + 2] = color.b
+    colors[vo * 3] = _tmpColor.r
+    colors[vo * 3 + 1] = _tmpColor.g
+    colors[vo * 3 + 2] = _tmpColor.b
   }
 
   // 三角形: strip
@@ -449,6 +463,194 @@ function buildHueRing() {
   }))
 }
 
+// === リファレンスグリッド（等彩度線 + 等高線 + ドット） ===
+function buildRefGrid() {
+  const { hueBinCount, chromaBinCount, wheelColors, gamutMaxChroma, maxChroma } = props.data
+  const densityGrid = buildDensityGrid(activeDensityCells.value, hueBinCount, chromaBinCount)
+  const globalMaxC = Math.max(...gamutMaxChroma)
+  const lScale = bandLightnessScale()
+
+  const root = new Group()
+  const linePositions: number[] = []
+  const lineColors: number[] = []
+  const dotPositions: number[] = []  // x, y, z を flat に格納
+  const dotColors: number[] = []     // r, g, b を flat に格納
+
+  const CHROMA_RINGS = 6
+  const HEIGHT_LEVELS = 4
+  const RING_SEGS = 90
+  const DOT_RADIUS = 0.008
+
+  /** 指定 hueNorm / chromaNorm での地形高さを取得 */
+  function terrainHeightAt(hueNorm: number, chromaNorm: number): number {
+    const gamutC = sampleGamutMaxChroma(gamutMaxChroma, hueNorm)
+    const actualChroma = chromaNorm * gamutC
+    const densityChromaNorm = maxChroma > 0 ? actualChroma / maxChroma : 0
+    if (densityChromaNorm > 1.0) return 0
+    const d = sampleDensity(densityGrid, hueBinCount, chromaBinCount, hueNorm, densityChromaNorm)
+    const scaled = props.logScale && d > 0 ? Math.log1p(d * 100) / Math.log1p(100) : d
+    return scaled * HEIGHT_SCALE
+  }
+
+  /** hueNorm / chromaNorm での色を _tmpColor にセット（バンド明度反映） */
+  function colorAt(hueNorm: number, chromaNorm: number): void {
+    const gamutC = sampleGamutMaxChroma(gamutMaxChroma, hueNorm)
+    const actualChroma = chromaNorm * gamutC
+    const densityChromaNorm = maxChroma > 0 ? actualChroma / maxChroma : 0
+    const base = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, Math.min(1, densityChromaNorm))
+    _tmpColor.setRGB(base.r / 255, base.g / 255, base.b / 255, SRGBColorSpace)
+    _tmpColor.getHSL(_tmpHSL)
+    _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
+    _tmpColor.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
+  }
+
+  // --- 等彩度リング（地形表面に沿って走る） ---
+  for (let ci = 1; ci <= CHROMA_RINGS; ci++) {
+    const chromaNorm = ci / (CHROMA_RINGS + 1)
+    for (let si = 0; si < RING_SEGS; si++) {
+      const hueNorm1 = si / RING_SEGS
+      const hueNorm2 = (si + 1) / RING_SEGS
+      const theta1 = hueNorm1 * Math.PI * 2
+      const theta2 = hueNorm2 * Math.PI * 2
+
+      const maxR1 = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm1)
+      const maxR2 = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm2)
+      const r1 = chromaNorm * maxR1
+      const r2 = chromaNorm * maxR2
+
+      const h1 = terrainHeightAt(hueNorm1, chromaNorm) + 0.005
+      const h2 = terrainHeightAt(hueNorm2, chromaNorm) + 0.005
+
+      const x1 = r1 * Math.cos(theta1), z1 = r1 * Math.sin(theta1)
+      const x2 = r2 * Math.cos(theta2), z2 = r2 * Math.sin(theta2)
+
+      colorAt(hueNorm1, chromaNorm)
+      const r1c = _tmpColor.r, g1c = _tmpColor.g, b1c = _tmpColor.b
+      colorAt(hueNorm2, chromaNorm)
+
+      linePositions.push(x1, h1, z1, x2, h2, z2)
+      lineColors.push(r1c, g1c, b1c, _tmpColor.r, _tmpColor.g, _tmpColor.b)
+
+      if (si % 10 === 0) {
+        dotPositions.push(x1, h1, z1)
+        dotColors.push(r1c, g1c, b1c)
+      }
+    }
+  }
+
+  // --- 水平リング（空間に浮かぶ高さ目盛り） ---
+  const HORIZ_RING_SEGS = 90
+  for (let hi = 1; hi <= HEIGHT_LEVELS; hi++) {
+    const y = (hi / (HEIGHT_LEVELS + 1)) * HEIGHT_SCALE
+    for (let si = 0; si < HORIZ_RING_SEGS; si++) {
+      const hueNorm1 = si / HORIZ_RING_SEGS
+      const hueNorm2 = (si + 1) / HORIZ_RING_SEGS
+      const theta1 = hueNorm1 * Math.PI * 2
+      const theta2 = hueNorm2 * Math.PI * 2
+      const r1 = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm1)
+      const r2 = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm2)
+
+      const x1 = r1 * Math.cos(theta1), z1 = r1 * Math.sin(theta1)
+      const x2 = r2 * Math.cos(theta2), z2 = r2 * Math.sin(theta2)
+
+      colorAt(hueNorm1, 0.9)
+      const r1c = _tmpColor.r, g1c = _tmpColor.g, b1c = _tmpColor.b
+      colorAt(hueNorm2, 0.9)
+
+      linePositions.push(x1, y, z1, x2, y, z2)
+      lineColors.push(r1c, g1c, b1c, _tmpColor.r, _tmpColor.g, _tmpColor.b)
+
+      if (si % 10 === 0) {
+        dotPositions.push(x1, y, z1)
+        dotColors.push(r1c, g1c, b1c)
+      }
+    }
+  }
+
+  // --- 垂直リブ（地面から最大高さまで、一定間隔の色相角で立てる） ---
+  const VERT_RIB_COUNT = 12
+  const VERT_RIB_SEGS = 8
+  for (let ri = 0; ri < VERT_RIB_COUNT; ri++) {
+    const hueNorm = ri / VERT_RIB_COUNT
+    const theta = hueNorm * Math.PI * 2
+    const r = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm)
+    const x = r * Math.cos(theta)
+    const z = r * Math.sin(theta)
+    colorAt(hueNorm, 0.9)
+    const rc = _tmpColor.r, gc = _tmpColor.g, bc = _tmpColor.b
+
+    for (let vi = 0; vi < VERT_RIB_SEGS; vi++) {
+      const y1 = (vi / VERT_RIB_SEGS) * HEIGHT_SCALE
+      const y2 = ((vi + 1) / VERT_RIB_SEGS) * HEIGHT_SCALE
+
+      linePositions.push(x, y1, z, x, y2, z)
+      lineColors.push(rc, gc, bc, rc, gc, bc)
+    }
+
+    dotPositions.push(x, HEIGHT_SCALE, z)
+    dotColors.push(rc, gc, bc)
+  }
+
+  // --- ワイヤーフレームライン ---
+  if (linePositions.length > 0) {
+    const lineGeo = new BufferGeometry()
+    lineGeo.setAttribute('position', new Float32BufferAttribute(linePositions, 3))
+    lineGeo.setAttribute('color', new Float32BufferAttribute(lineColors, 3))
+    root.add(new LineSegments(lineGeo, new LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.6,
+    })))
+  }
+
+  // --- ドット（InstancedMesh） ---
+  const dotCount = dotPositions.length / 3
+  if (dotCount > 0) {
+    const dotMat = new MeshBasicMaterial({ transparent: true, opacity: 0.7 })
+    const im = new InstancedMesh(dotSphereGeo, dotMat, dotCount)
+    const m = new Matrix4()
+    const p = new Vector3()
+
+    for (let i = 0; i < dotCount; i++) {
+      const i3 = i * 3
+      p.set(dotPositions[i3]!, dotPositions[i3 + 1]!, dotPositions[i3 + 2]!)
+      m.makeScale(DOT_RADIUS, DOT_RADIUS, DOT_RADIUS)
+      m.setPosition(p)
+      im.setMatrixAt(i, m)
+      _tmpColor.setRGB(dotColors[i3]!, dotColors[i3 + 1]!, dotColors[i3 + 2]!)
+      im.setColorAt(i, _tmpColor)
+    }
+    im.instanceMatrix.needsUpdate = true
+    if (im.instanceColor) im.instanceColor.needsUpdate = true
+    root.add(im)
+  }
+
+  disposeRefGrid(refGrid.value)
+  refGrid.value = root
+}
+
+function disposeRefGrid(g: Group | null) {
+  if (!g) return
+  g.traverse((obj) => {
+    if ('geometry' in obj && obj.geometry) (obj as any).geometry.dispose()
+    if ('material' in obj && obj.material) (obj as any).material.dispose()
+    if (obj instanceof InstancedMesh) obj.dispose()
+  })
+}
+
+// === 中心軸線 ===
+function buildCenterAxis() {
+  const axisHeight = HEIGHT_SCALE * 1.2
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new Float32BufferAttribute([
+    0, -0.01, 0,
+    0, axisHeight, 0,
+  ], 3))
+
+  disposeObj(centerAxis.value)
+  centerAxis.value = new LineSegments(geo, new LineBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.5,
+  }))
+}
+
 // === ユーティリティ ===
 function buildDiscIndices(angSegs: number, radSegs: number): number[] {
   const indices: number[] = []
@@ -470,16 +672,107 @@ function disposeObj(obj: Mesh | LineSegments | null) {
   if ('dispose' in obj.material) (obj.material as MeshBasicMaterial).dispose()
 }
 
+// === 軽量カラー更新（バンド切替時、形状再構築なし） ===
+function updateGroundColor() {
+  const mesh = groundMesh.value
+  if (!mesh) return
+  const mat = mesh.material as MeshBasicMaterial
+  mat.color.copy(bandBaseColor())
+  mat.needsUpdate = true
+}
+
+function updateGridColors() {
+  const lines = gridLines.value
+  if (!lines) return
+  const { hueBinCount, chromaBinCount, wheelColors } = props.data
+  const colorAttr = lines.geometry.getAttribute('color')
+  if (!colorAttr) return
+  const arr = colorAttr.array as Float32Array
+
+  const CONCENTRIC_CIRCLES = 8
+  const RADIAL_LINES = 24
+  const circleSegs = 72
+
+  let idx = 0
+  for (let ci = 1; ci <= CONCENTRIC_CIRCLES; ci++) {
+    const chromaNorm = ci / CONCENTRIC_CIRCLES
+    for (let si = 0; si < circleSegs; si++) {
+      const hueNorm1 = si / circleSegs
+      const hueNorm2 = (si + 1) / circleSegs
+      const c1 = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm1, chromaNorm)
+      const c2 = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm2, chromaNorm)
+      _tmpColor.setRGB(c1.r / 255, c1.g / 255, c1.b / 255, SRGBColorSpace)
+      arr[idx++] = _tmpColor.r; arr[idx++] = _tmpColor.g; arr[idx++] = _tmpColor.b
+      _tmpColor.setRGB(c2.r / 255, c2.g / 255, c2.b / 255, SRGBColorSpace)
+      arr[idx++] = _tmpColor.r; arr[idx++] = _tmpColor.g; arr[idx++] = _tmpColor.b
+    }
+  }
+  for (let hi = 0; hi < RADIAL_LINES; hi++) {
+    const hueNorm = hi / RADIAL_LINES
+    const cInner = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, 0.1)
+    const cOuter = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, 0.9)
+    _tmpColor.setRGB(cInner.r / 255, cInner.g / 255, cInner.b / 255, SRGBColorSpace)
+    arr[idx++] = _tmpColor.r; arr[idx++] = _tmpColor.g; arr[idx++] = _tmpColor.b
+    _tmpColor.setRGB(cOuter.r / 255, cOuter.g / 255, cOuter.b / 255, SRGBColorSpace)
+    arr[idx++] = _tmpColor.r; arr[idx++] = _tmpColor.g; arr[idx++] = _tmpColor.b
+  }
+  colorAttr.needsUpdate = true
+}
+
+function updateHueRingColors() {
+  const mesh = hueRingMesh.value
+  if (!mesh) return
+  const { hueBinCount } = props.data
+  const colorAttr = mesh.geometry.getAttribute('color')
+  if (!colorAttr) return
+  const arr = colorAttr.array as Float32Array
+  const segs = 120
+  const lScale = bandLightnessScale()
+
+  for (let i = 0; i <= segs; i++) {
+    const hueNorm = i / segs
+    const sectorIdx = Math.floor(hueNorm * hueBinCount) % hueBinCount
+    const rgb = props.data.ringColors[sectorIdx] ?? { r: 128, g: 128, b: 128 }
+    _tmpColor.setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace)
+    _tmpColor.getHSL(_tmpHSL)
+    _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
+    _tmpColor.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
+
+    const vi = i * 2
+    arr[vi * 3] = _tmpColor.r; arr[vi * 3 + 1] = _tmpColor.g; arr[vi * 3 + 2] = _tmpColor.b
+    const vo = vi + 1
+    arr[vo * 3] = _tmpColor.r; arr[vo * 3 + 1] = _tmpColor.g; arr[vo * 3 + 2] = _tmpColor.b
+  }
+  colorAttr.needsUpdate = true
+}
+
 // === 再構築 ===
+// データ変更時: 全要素を再構築
 watch(
-  [() => props.data, () => props.activeBand],
+  () => props.data,
   () => {
     buildTerrain()
     buildGround()
     buildGrid()
     buildHueRing()
+    buildRefGrid()
+    buildCenterAxis()
   },
   { immediate: true },
+)
+
+// バンド / ログスケール変更時: 密度依存の要素のみ再構築、色のみの要素は軽量更新
+watch(
+  [() => props.activeBand, () => props.logScale],
+  () => {
+    // 密度データが変わる → 地形 + リファレンスグリッドは再構築必須
+    buildTerrain()
+    buildRefGrid()
+    // 色だけ変わる → マテリアル色 / 頂点カラーのみ更新
+    updateGroundColor()
+    updateGridColors()
+    updateHueRingColors()
+  },
 )
 
 const isMounted = ref(false)
@@ -491,5 +784,8 @@ onScopeDispose(() => {
   disposeObj(groundMesh.value)
   disposeObj(gridLines.value)
   disposeObj(hueRingMesh.value)
+  disposeRefGrid(refGrid.value)
+  disposeObj(centerAxis.value)
+  dotSphereGeo.dispose()
 })
 </script>
