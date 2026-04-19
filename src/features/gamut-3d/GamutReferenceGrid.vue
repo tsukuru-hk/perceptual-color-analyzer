@@ -162,24 +162,22 @@ function buildGroup(colorSpace: ColorSpace): Group {
 
 const group = shallowRef<Group | null>(null)
 
-function disposeGroup() {
-  if (group.value) {
-    group.value.traverse((obj) => {
-      if ('geometry' in obj && obj.geometry) (obj as any).geometry.dispose()
-      if ('material' in obj && obj.material) (obj as any).material.dispose()
-      if (obj instanceof InstancedMesh) obj.dispose()
-    })
-    group.value = null
-  }
+function disposeGroupObj(g: Group | null) {
+  if (!g) return
+  g.traverse((obj) => {
+    if ('geometry' in obj && obj.geometry) (obj as any).geometry.dispose()
+    if ('material' in obj && obj.material) (obj as any).material.dispose()
+    if (obj instanceof InstancedMesh) obj.dispose()
+  })
 }
 
 watch(toRef(props, 'colorSpace'), (cs) => {
-  disposeGroup()
+  disposeGroupObj(group.value)
   group.value = buildGroup(cs)
 }, { immediate: true })
 
 onScopeDispose(() => {
-  disposeGroup()
+  disposeGroupObj(group.value)
   sphereGeo.dispose()
 })
 </script>

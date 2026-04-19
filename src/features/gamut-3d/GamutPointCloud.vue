@@ -50,21 +50,19 @@ function buildMesh(data: GamutPointCloudData): InstancedMesh {
   return im
 }
 
-function disposeMesh() {
+watch(toRef(props, 'data'), (newData) => {
   if (mesh.value) {
     mesh.value.dispose()
-    mesh.value = null
   }
-}
-
-watch(toRef(props, 'data'), (newData) => {
-  disposeMesh()
-  if (!newData || newData.count === 0) return
+  if (!newData || newData.count === 0) {
+    mesh.value = null
+    return
+  }
   mesh.value = buildMesh(newData)
 }, { immediate: true })
 
 onScopeDispose(() => {
-  disposeMesh()
+  if (mesh.value) mesh.value.dispose()
   sphereGeo.dispose()
   material.dispose()
 })
