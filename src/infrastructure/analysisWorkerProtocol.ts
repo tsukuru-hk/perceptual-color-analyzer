@@ -2,6 +2,7 @@ import type { AnalysisKey, GamutPointCloudData } from '@/types/analysis'
 import type { ColorSpace } from '@/domain/colorSpace'
 import type { HistogramData } from '@/infrastructure/histogramTypes'
 import type { ColorClusterResult } from '@/domain/colorCluster'
+import type { HueAnalysisResult } from '@/types/hueAnalysis'
 
 /** 分析種別ごとのパラメータ */
 export interface AnalysisParams {
@@ -29,5 +30,6 @@ export interface AnalysisResponse {
   histogramData?: HistogramData
   gamutPointCloudData?: GamutPointCloudData
   colorClusterData?: ColorClusterResult
+  hueAnalysisData?: HueAnalysisResult
   errorMessage?: string
 }

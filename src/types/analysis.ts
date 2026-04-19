@@ -1,5 +1,6 @@
 import type { HistogramData } from '@/infrastructure/histogramTypes'
 import type { ColorClusterResult } from '@/domain/colorCluster'
+import type { HueAnalysisResult } from '@/types/hueAnalysis'
 
 /** 3D ガマットポイントクラウドデータ */
 export interface GamutPointCloudData {
@@ -14,7 +15,7 @@ export interface GamutPointCloudData {
 }
 
 /** 分析種別 */
-export type AnalysisKey = 'chromaMap' | 'chromaHistogram' | 'lightnessMap' | 'lightnessHistogram' | 'gamutPointCloud' | 'colorClustering'
+export type AnalysisKey = 'chromaMap' | 'chromaHistogram' | 'lightnessMap' | 'lightnessHistogram' | 'gamutPointCloud' | 'colorClustering' | 'hueAnalysis'
 
 /** 分析種別ごとの結果型 */
 export type AnalysisResult = {
@@ -24,6 +25,7 @@ export type AnalysisResult = {
   lightnessHistogram: HistogramData
   gamutPointCloud: GamutPointCloudData
   colorClustering: ColorClusterResult
+  hueAnalysis: HueAnalysisResult
 }
 
 /** 分析エラー情報 */

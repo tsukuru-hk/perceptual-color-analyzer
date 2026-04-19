@@ -159,6 +159,8 @@ export function useImageStore() {
           setCacheEntry(imageId, key, response.gamutPointCloudData as AnalysisResult[K])
         } else if (response.colorClusterData) {
           setCacheEntry(imageId, key, response.colorClusterData as AnalysisResult[K])
+        } else if (response.hueAnalysisData) {
+          setCacheEntry(imageId, key, response.hueAnalysisData as AnalysisResult[K])
         }
       } else {
         // エラー状態をキャッシュに保存（無限スピナーを防止）
