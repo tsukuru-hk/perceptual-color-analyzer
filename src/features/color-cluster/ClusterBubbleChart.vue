@@ -76,7 +76,6 @@ const TRANSITION_MS = 600
 
 const props = withDefaults(defineProps<{
   data: ColorClusterResult
-  imageId: string
   height?: number
 }>(), {
   height: 240,
@@ -170,26 +169,14 @@ function averageRgb(samples: ColorSample[]): { r: number; g: number; b: number }
 // ─── 安定ID管理 ───
 // 重心の OKLCH 距離で新旧クラスタをマッチングし、安定IDを引き継ぐ。
 // マッチしなかった新クラスタにはフレッシュIDを付与。
-// 画像が変わったらリセットし、クロス画像のマッチングを防ぐ。
 
 let stableIdCounter = 0
-let prevImageId = ''
 
 /** 前回のクラスタ情報（安定ID → 重心） */
 const prevClusterCentroids = new Map<number, OklchValue>()
 
 /** 現在の clusterId → stableId マッピング */
 const clusterStableIdMap = new Map<number, number>()
-
-/** 画像が変わったかどうかを判定し、変わっていたら安定IDをリセット */
-function resetIfImageChanged(imageId: string): boolean {
-  if (imageId === prevImageId) return false
-  prevImageId = imageId
-  stableIdCounter = 0
-  prevClusterCentroids.clear()
-  clusterStableIdMap.clear()
-  return true
-}
 
 /** OKLCH 距離の二乗（直交座標ベース ΔEok） */
 function oklchDistSq(a: OklchValue, b: OklchValue): number {
@@ -285,18 +272,10 @@ interface BubbleCacheEntry {
 }
 const bubbleOffsetCache = new Map<number, BubbleCacheEntry>()
 
-interface LayoutResult {
-  groups: ClusterGroup[]
-  isNewImage: boolean
-}
-
 /** レイアウト計算（副作用: 安定ID・キャッシュ更新を含む） */
-function buildLayout(data: ColorClusterResult, imageId: string, size: number): LayoutResult {
+function buildLayout(data: ColorClusterResult, size: number): ClusterGroup[] {
   const { clusters, samples } = data
-  if (clusters.length === 0) return { groups: [], isNewImage: false }
-
-  const isNewImage = resetIfImageChanged(imageId)
-  if (isNewImage) bubbleOffsetCache.clear()
+  if (clusters.length === 0) return []
 
   assignStableIds(clusters)
 
@@ -428,7 +407,7 @@ function buildLayout(data: ColorClusterResult, imageId: string, size: number): L
   bubbleOffsetCache.clear()
   for (const [id, entry] of newOffsetCache) bubbleOffsetCache.set(id, entry)
 
-  return { groups, isNewImage }
+  return groups
 }
 
 // ─── データ変更 → レイアウト計算 → 描画更新 ───
@@ -454,40 +433,15 @@ onBeforeUnmount(() => {
 })
 
 watch(
-  [() => props.data, () => props.imageId, () => props.height],
-  ([data, imageId, height]) => {
-    const { groups: newLayout, isNewImage } = buildLayout(data, imageId, height)
+  [() => props.data, () => props.height],
+  ([data, height]) => {
+    const newLayout = buildLayout(data, height)
 
     // 前回の watch が残した nextTick / setTimeout を破棄
     cancelPendingAnimation()
     const token = ++animationToken
 
-    // 画像が変わった場合: アニメーションなしで即座に最終状態を表示
-    if (isNewImage) {
-      renderState.value = {
-        groups: newLayout.map((g) => ({
-          key: g.stableId,
-          cx: g.envelope.x,
-          cy: g.envelope.y,
-          r: g.envelope.r,
-          fill: g.envelopeFill,
-          opacity: 0.92,
-        })),
-        bubbles: newLayout.flatMap((g) =>
-          g.bubbles.map((b) => ({
-            key: b.sampleId,
-            cx: b.x,
-            cy: b.y,
-            r: b.r,
-            fill: b.fill,
-            opacity: 1,
-          })),
-        ),
-      }
-      return
-    }
-
-    // 同じ画像内での変化: 差分アニメーション
+    // 差分アニメーション
     const prev = renderState.value
 
     const prevGroupKeys = new Set(

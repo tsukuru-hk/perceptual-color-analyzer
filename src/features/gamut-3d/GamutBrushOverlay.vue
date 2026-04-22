@@ -7,6 +7,7 @@
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointerleave="onPointerUp"
+    @pointercancel="onPointerUp"
   >
     <!-- ブラシカーソル -->
     <div
@@ -22,12 +23,13 @@
  * 画像キャンバス上に重ねるブラシオーバーレイ。
  * ドラッグ操作でピクセルを収集し、OKLCH → 3D 座標に変換して親に emit する。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { oklchToPosition, DEFAULT_GAMUT_SCALE } from '@/domain/oklchTo3d'
 import { createPixelConverter } from '@/infrastructure/colorSpaceConverter'
 import type { ColorSpace } from '@/domain/colorSpace'
 
 const BRUSH_RADIUS = 3
+const THROTTLE_MS = 16
 
 const props = defineProps<{
   imageData: ImageData
@@ -36,6 +38,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  /** ストローク開始（画像切替を一時停止させる用途） */
+  strokeStart: []
+  /** ストローク終了 */
+  strokeEnd: []
+  /** 1 点サンプリング通知 */
   brushStroke: [positions: Float32Array, colors: Float32Array, count: number]
 }>()
 
@@ -44,6 +51,9 @@ const isDragging = ref(false)
 const cursorX = ref(0)
 const cursorY = ref(0)
 const cursorVisible = ref(false)
+
+/** 色空間ごとの pixel → OKLCH 変換関数。色空間変更時のみ再生成 */
+const toOklch = computed(() => createPixelConverter(props.colorSpace))
 
 const cursorStyle = computed(() => {
   const size = BRUSH_RADIUS * 2
@@ -60,7 +70,6 @@ function toImageCoords(e: PointerEvent): { ix: number; iy: number } | null {
   const el = overlayRef.value
   if (!el) return null
   const rect = el.getBoundingClientRect()
-  // CSS 表示サイズに対する比率で画像座標に変換
   const ratioX = props.imageData.width / rect.width
   const ratioY = props.imageData.height / rect.height
   const ix = Math.floor((e.clientX - rect.left) * ratioX)
@@ -69,14 +78,17 @@ function toImageCoords(e: PointerEvent): { ix: number; iy: number } | null {
   return { ix, iy }
 }
 
-/** ブラシ位置のピクセル1点をサンプリングして OKLCH → 3D 変換し emit */
+// 1 点分の出力バッファ（毎回新規確保しない）
+const posOut = new Float32Array(3)
+const colorOut = new Float32Array(3)
+
+/** ブラシ位置のピクセル 1 点をサンプリングして OKLCH → 3D 変換し emit */
 function sampleBrush(e: PointerEvent): void {
   const coords = toImageCoords(e)
   if (!coords) return
 
-  const { imageData, colorSpace } = props
+  const { imageData } = props
   const { width, data } = imageData
-  const toOklch = createPixelConverter(colorSpace)
 
   const offset = (coords.iy * width + coords.ix) * 4
   const a = data[offset + 3]!
@@ -86,24 +98,24 @@ function sampleBrush(e: PointerEvent): void {
   const g = data[offset + 1]!
   const b = data[offset + 2]!
 
-  const oklch = toOklch(r, g, b)
+  const oklch = toOklch.value(r, g, b)
   if (!oklch) return
 
-  const pos = oklchToPosition(oklch.l, oklch.c, oklch.h, DEFAULT_GAMUT_SCALE)
-  const positions = new Float32Array([pos.x, pos.y, pos.z])
-  const colors = new Float32Array([r / 255, g / 255, b / 255])
+  const p = oklchToPosition(oklch.l, oklch.c, oklch.h, DEFAULT_GAMUT_SCALE)
+  posOut[0] = p.x; posOut[1] = p.y; posOut[2] = p.z
+  colorOut[0] = r / 255; colorOut[1] = g / 255; colorOut[2] = b / 255
 
-  emit('brushStroke', positions, colors, 1)
+  emit('brushStroke', posOut, colorOut, 1)
 }
 
 let lastSampleTime = 0
-const THROTTLE_MS = 100
 
 function onPointerDown(e: PointerEvent): void {
   if (!props.brushMode) return
   isDragging.value = true
   ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
   lastSampleTime = 0
+  emit('strokeStart')
   sampleBrush(e)
 }
 
@@ -126,6 +138,16 @@ function onPointerMove(e: PointerEvent): void {
 }
 
 function onPointerUp(): void {
+  if (!isDragging.value) return
   isDragging.value = false
+  emit('strokeEnd')
 }
+
+// アンマウント時にストローク保留を必ず解除（画像切替の保留状態が残らないよう）
+onBeforeUnmount(() => {
+  if (isDragging.value) {
+    isDragging.value = false
+    emit('strokeEnd')
+  }
+})
 </script>

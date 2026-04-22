@@ -53,14 +53,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, defineAsyncComponent, ref } from 'vue'
 import { Rainbow } from 'lucide-vue-next'
 import AnalysisPageLayout from '@/components/ui/AnalysisPageLayout.vue'
 import { AnalysisSpinner, AnalysisErrorCard, Toggle } from '@/components/ui'
-import { HueTerrainChart, LightnessBandPreview, LightnessBandToggle } from '@/features/hue-analysis'
+import { LightnessBandToggle } from '@/features/hue-analysis'
 import { isAnalysisError } from '@/types/analysis'
 import type { HueAnalysisResult } from '@/types/hueAnalysis'
 import { useImageStore } from '@/composables/useImageStore'
+
+const HueTerrainChart = defineAsyncComponent(() =>
+  import('@/features/hue-analysis/HueTerrainChart.vue'),
+)
+const LightnessBandPreview = defineAsyncComponent(() =>
+  import('@/features/hue-analysis/LightnessBandPreview.vue'),
+)
 
 const { selectedImage, getAnalysis, retryAnalysis } = useImageStore()
 

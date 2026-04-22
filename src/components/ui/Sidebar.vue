@@ -9,17 +9,18 @@
     </div>
     <!-- 主要ルート（分析ページ / デザインシステム） -->
     <nav class="flex-1 flex flex-col gap-1 p-1 pt-2">
-      <template v-for="item in items" :key="item.path ?? 'divider'">
+      <template v-for="(item, idx) in items" :key="item.type === 'divider' ? `divider-${idx}` : item.path">
         <div v-if="item.type === 'divider'" class="my-1 border-t border-border" />
         <router-link
           v-else
-          :to="item.path!"
+          :to="item.path"
           :class="cn(
             'flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 transition-colors',
-            isActive(item.path!)
+            isActive(item.path)
               ? 'bg-primary/10 text-primary'
               : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
           )"
+          @mouseenter="prefetch(item.path)"
         >
           <component :is="item.icon" class="h-5 w-5" />
           <span class="text-[10px] leading-tight text-center truncate w-full">
@@ -36,16 +37,28 @@ import { useRoute } from 'vue-router'
 import { LayoutDashboard, Droplets, Sun, Rainbow, Box, BarChart3, LayoutGrid } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { cn } from '@/lib/utils'
+import { routeImports, type RoutePath } from '@/router'
 
 const route = useRoute()
 
-interface NavItem {
-  type?: 'divider'
-  path?: string
-  label?: string
-  shortLabel?: string
-  icon?: Component
+/** ホバー時にルートチャンクを事前ロード（1パスにつき1回のみ） */
+const prefetched = new Set<RoutePath>()
+function prefetch(path: RoutePath): void {
+  if (prefetched.has(path)) return
+  prefetched.add(path)
+  routeImports[path]()
 }
+
+/** ナビ項目の型（divider / link の判別は type プロパティで行う） */
+type NavItem =
+  | { type: 'divider' }
+  | {
+      type?: undefined
+      path: RoutePath
+      label: string
+      shortLabel: string
+      icon: Component
+    }
 
 const items: NavItem[] = [
   { path: '/', label: '総合分析', shortLabel: '総合', icon: LayoutDashboard },
@@ -58,7 +71,7 @@ const items: NavItem[] = [
   { path: '/design', label: 'デザインシステム', shortLabel: 'デザイン', icon: LayoutGrid },
 ]
 
-function isActive(path: string): boolean {
+function isActive(path: RoutePath): boolean {
   return route.path === path
 }
 </script>

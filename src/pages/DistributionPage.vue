@@ -46,8 +46,8 @@
           />
           <template v-else-if="displayedResult">
             <ClusterBubbleChart
+              :key="imageId"
               :data="displayedResult"
-              :image-id="imageId"
               :height="480"
             />
             <div class="mt-3">
@@ -62,14 +62,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, defineAsyncComponent, reactive, shallowRef, watch } from 'vue'
 import { BarChart3 } from 'lucide-vue-next'
 import type { ColorClusterResult } from '@/domain/colorCluster'
 import AnalysisPageLayout from '@/components/ui/AnalysisPageLayout.vue'
 import { InfoTooltip, AnalysisSpinner, AnalysisErrorCard } from '@/components/ui'
-import { ClusterBubbleChart, ClusterRatioBar } from '@/features/color-cluster'
+import { ClusterRatioBar } from '@/features/color-cluster'
 import { isAnalysisError } from '@/types/analysis'
 import { useImageStore } from '@/composables/useImageStore'
+
+const ClusterBubbleChart = defineAsyncComponent(() =>
+  import('@/features/color-cluster/ClusterBubbleChart.vue'),
+)
 
 /** 手動パレット指定時の最小値（これ未満にしようとすると自動モードへ戻る） */
 const MIN_MANUAL_PALETTE = 2
