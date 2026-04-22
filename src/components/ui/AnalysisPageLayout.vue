@@ -13,7 +13,8 @@
         <template #left>
           <div class="h-full overflow-auto p-4">
             <h3 class="mb-2 text-sm font-medium text-muted-foreground">オリジナル画像</h3>
-            <ImageCanvas :image-data="selectedImage.colorAwareImageData.imageData" />
+            <slot v-if="slots.left" name="left" :color-aware-image-data="selectedImage!.colorAwareImageData" />
+            <ImageCanvas v-else :image-data="selectedImage!.colorAwareImageData.imageData" />
           </div>
         </template>
         <template #right>
@@ -51,11 +52,13 @@
 </template>
 
 <script setup lang="ts">
-import type { Component } from 'vue'
+import { useSlots, type Component } from 'vue'
 import { DropZone, SplitPane } from '@/components/ui'
 import ImageGalleryBar from '@/components/ui/ImageGalleryBar.vue'
 import ImageCanvas from '@/features/image-analysis/ImageCanvas.vue'
 import { useImageStore } from '@/composables/useImageStore'
+
+const slots = useSlots()
 
 withDefaults(defineProps<{
   /** ページタイトル（h1） */

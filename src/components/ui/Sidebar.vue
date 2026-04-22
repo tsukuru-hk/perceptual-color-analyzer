@@ -52,7 +52,7 @@ const items: NavItem[] = [
   { path: '/lightness', label: '明度 (Lightness)', shortLabel: '明度', icon: Sun },
   { path: '/chroma', label: '彩度 (Chroma)', shortLabel: '彩度', icon: Droplets },
   { path: '/hue', label: '色相 (Hue)', shortLabel: '色相', icon: Rainbow },
-  { path: '/gamut', label: '3D ガマット', shortLabel: 'ガマット', icon: Box },
+  { path: '/gamut', label: '3D ガマット', shortLabel: '3D', icon: Box },
   { path: '/distribution', label: '色分布', shortLabel: '色分布', icon: BarChart3 },
   { type: 'divider' },
   { path: '/design', label: 'デザインシステム', shortLabel: 'デザイン', icon: LayoutGrid },

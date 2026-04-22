@@ -3,7 +3,7 @@
  * 極座標ローズダイアグラム + 密度ガマットシェイプのデータを生成する。
  * Infrastructure: ピクセルループと Culori 変換のみ。Canvas 非依存。
  */
-import { type Result, success, failure, BaseError } from '@/core/result'
+import { type Result, success } from '@/core/result'
 import type { ColorAwareImageData } from '@/domain/colorSpace'
 import { createPixelConverter } from '@/infrastructure/colorSpaceConverter'
 import { converter, clampChroma, displayable } from 'culori'
@@ -189,7 +189,43 @@ export function generateHueAnalysis(
   }
 
   if (allGrid.totalPixels === 0) {
-    return failure(new BaseError({ name: 'NoPixels', message: '有彩色ピクセルが見つかりませんでした' }))
+    // 有彩色ピクセルなし → 空の結果を返す（3D表示は維持）
+    const emptySectors = buildSectors(allGrid)
+    const emptyDensityCells: PolarDensityCell[] = []
+    const emptyGamutMaxChroma: number[] = []
+    const emptyRingColors: RgbType[] = []
+    const emptyWheelColors: RgbType[] = []
+    const defaultMaxChroma = 0.4
+    const defaultChromaBinWidth = defaultMaxChroma / CHROMA_BIN_COUNT
+    for (let h = 0; h < HUE_BIN_COUNT; h++) {
+      const hueCenter = h * HUE_BIN_WIDTH + HUE_BIN_WIDTH / 2
+      emptyGamutMaxChroma.push(findMaxChromaForHue(hueCenter))
+      emptyRingColors.push(oklchToRgb255(0.65, emptyGamutMaxChroma[h]! * 0.95, hueCenter))
+      for (let c = 0; c < CHROMA_BIN_COUNT; c++) {
+        const chromaCenter = c * defaultChromaBinWidth + defaultChromaBinWidth / 2
+        emptyWheelColors.push(oklchToRgb255(0.65, chromaCenter, hueCenter))
+      }
+    }
+    const emptyLightnessBands: LightnessBandData[] = LIGHTNESS_BANDS.map((band, i) => ({
+      label: band.label,
+      range: band.range,
+      sectors: buildSectors(bandGrids[i]!),
+      densityCells: [],
+      pixelCount: 0,
+    }))
+    return success({
+      sectors: emptySectors,
+      densityCells: emptyDensityCells,
+      hueBinCount: HUE_BIN_COUNT,
+      chromaBinCount: CHROMA_BIN_COUNT,
+      maxChroma: 0.4,
+      gamutMaxChroma: emptyGamutMaxChroma,
+      ringColors: emptyRingColors,
+      wheelColors: emptyWheelColors,
+      lightnessBands: emptyLightnessBands,
+      totalChromaticPixels: 0,
+      totalOpaquePixels: opaquePixels,
+    })
   }
 
   // === maxChroma が確定したので、2パス目で正確なビン割り当て ===

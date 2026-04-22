@@ -22,6 +22,15 @@
           :log-scale="logScale"
           class="h-full w-full"
         />
+        <!-- 有彩色ピクセルなしオーバーレイ -->
+        <div
+          v-if="hueResult.totalChromaticPixels === 0"
+          class="absolute inset-0 z-20 flex items-center justify-center pointer-events-none"
+        >
+          <div class="rounded-lg border border-white/20 bg-black/50 px-4 py-2 backdrop-blur-sm">
+            <span class="text-sm text-white/90">有彩色ピクセルが見つかりませんでした</span>
+          </div>
+        </div>
         <!-- オーバーレイ UI 左上 -->
         <div class="absolute left-3 top-3 z-10 flex flex-col gap-2">
           <LightnessBandToggle v-model="activeBand" />
