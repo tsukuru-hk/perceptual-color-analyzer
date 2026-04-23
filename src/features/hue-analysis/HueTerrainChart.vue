@@ -21,7 +21,7 @@
         :max-distance="12"
       />
 
-      <TresGroup :position-y="SCENE_Y_OFFSET">
+      <TresGroup :position-y="SCENE_Y_OFFSET" :scale-y="animScaleY">
         <!-- 白い地面ディスク -->
         <primitive v-if="groundMesh" :object="groundMesh" />
 
@@ -60,6 +60,15 @@
     </div>
   </div>
 </template>
+
+<script lang="ts">
+/**
+ * アニメーション済みのデータを追跡するグローバル WeakSet。
+ * 同じ HueAnalysisResult オブジェクトが再マウントされた際に
+ * 二度目以降はアニメーションをスキップするためにモジュールレベルで保持する。
+ */
+const animatedTerrainData = new WeakSet<object>()
+</script>
 
 <script setup lang="ts">
 import { computed, watch, shallowRef, ref, onMounted, onScopeDispose } from 'vue'
@@ -201,6 +210,39 @@ const hueRingMesh = shallowRef<Mesh | null>(null)
 const centerAxis = shallowRef<LineSegments | null>(null)
 const refGrid = shallowRef<Group | null>(null)
 const dotSphereGeo = new SphereGeometry(1, 6, 4)
+
+// === 登場アニメーション（山が聳え立つ演出） ===
+const RISE_DURATION = 1.0 // 秒
+const animScaleY = ref(1)
+let animRafId = 0
+let animStartTime = -1
+
+/** ease-out-back: 少しオーバーシュートしてから着地 */
+function easeOutBack(t: number): number {
+  const c1 = 1.70158
+  const c3 = c1 + 1
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2)
+}
+
+function startRiseAnimation() {
+  animScaleY.value = 0
+  animStartTime = -1
+  cancelAnimationFrame(animRafId)
+
+  function tick(now: number) {
+    if (animStartTime < 0) animStartTime = now
+    const elapsed = (now - animStartTime) / 1000
+    if (elapsed >= RISE_DURATION) {
+      animScaleY.value = 1
+      animatedTerrainData.add(props.data)
+      return
+    }
+    const t = elapsed / RISE_DURATION
+    animScaleY.value = easeOutBack(t)
+    animRafId = requestAnimationFrame(tick)
+  }
+  animRafId = requestAnimationFrame(tick)
+}
 
 // === 地形メッシュ ===
 /** 明度帯に応じた色の明度スケーリング係数 */
@@ -747,16 +789,32 @@ function updateHueRingColors() {
 }
 
 // === 再構築 ===
-// データ変更時: 全要素を再構築
+/** 初回データ到着時、Canvas が未マウントならアニメーション予約 */
+let pendingAnimation = false
+
+// データ変更時: 全要素を再構築 + 初回のみ登場アニメーション
 watch(
   () => props.data,
-  () => {
+  (newData) => {
     buildTerrain()
     buildGround()
     buildGrid()
     buildHueRing()
     buildRefGrid()
     buildCenterAxis()
+
+    if (!animatedTerrainData.has(newData)) {
+      animScaleY.value = 0
+      if (isMounted.value) {
+        // Canvas 既存 → 即座に開始
+        startRiseAnimation()
+      } else {
+        // Canvas 未生成 → onMounted で開始
+        pendingAnimation = true
+      }
+    } else {
+      animScaleY.value = 1
+    }
   },
   { immediate: true },
 )
@@ -776,9 +834,21 @@ watch(
 )
 
 const isMounted = ref(false)
-onMounted(() => { isMounted.value = true })
+onMounted(() => {
+  isMounted.value = true
+  if (pendingAnimation) {
+    pendingAnimation = false
+    // TresCanvas が WebGL コンテキストを初期化するまで数フレーム待つ
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        startRiseAnimation()
+      })
+    })
+  }
+})
 
 onScopeDispose(() => {
+  cancelAnimationFrame(animRafId)
   disposeObj(terrainMesh.value)
   disposeObj(terrainWire.value)
   disposeObj(groundMesh.value)
