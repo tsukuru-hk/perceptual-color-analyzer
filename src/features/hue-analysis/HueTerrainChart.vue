@@ -31,11 +31,14 @@
         <!-- 地形メッシュ -->
         <primitive :object="terrainMesh" />
 
-        <!-- 地形ワイヤーフレーム -->
-        <primitive v-if="terrainWire" :object="terrainWire" />
-
         <!-- 外周の色相環リング（土星リング風） -->
         <primitive v-if="hueRingMesh" :object="hueRingMesh" />
+      </TresGroup>
+
+      <!-- アニメーションなしのグループ -->
+      <TresGroup :position-y="SCENE_Y_OFFSET">
+        <!-- 地形ワイヤーフレーム -->
+        <primitive v-if="terrainWire" :object="terrainWire" />
 
         <!-- リファレンスグリッド（等彩度線 + 等高線 + ドット） -->
         <primitive v-if="refGrid" :object="refGrid" />
@@ -93,6 +96,7 @@ import {
   Vector3,
 } from 'three'
 import type { HueAnalysisResult, PolarDensityCell } from '@/types/hueAnalysis'
+import type { TerrainWorkerRequest, TerrainWorkerResponse } from '@/infrastructure/terrainGeometryWorker'
 
 const props = defineProps<{
   data: HueAnalysisResult
@@ -201,6 +205,211 @@ function sampleColor(
   }
 }
 
+// === 明度帯スケーリング済み Linear RGB LUT ===
+// wheelColors (sRGB 0-255) を、現在の activeBand に応じた HSL 明度スケーリング済み Linear RGB に変換。
+// メインスレッドの update* 系関数で毎頂点 getHSL/setHSL する代わりに LUT 参照のみで済む。
+const scaledWheelColorsLUT = computed<Float32Array>(() => {
+  const wc = props.data.wheelColors
+  const lScale = bandLightnessScale()
+  const lut = new Float32Array(wc.length * 3)
+  for (let i = 0; i < wc.length; i++) {
+    const c = wc[i]!
+    _tmpBC.setRGB(c.r / 255, c.g / 255, c.b / 255, SRGBColorSpace)
+    _tmpBC.getHSL(_tmpHSL)
+    _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
+    _tmpBC.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
+    lut[i * 3] = _tmpBC.r
+    lut[i * 3 + 1] = _tmpBC.g
+    lut[i * 3 + 2] = _tmpBC.b
+  }
+  return lut
+})
+
+/** LUT から Linear RGB をバイリニア補間サンプリング */
+function sampleScaledColor(
+  lut: Float32Array,
+  hueBins: number, chromaBins: number,
+  hueNorm: number, chromaNorm: number,
+): { r: number; g: number; b: number } {
+  const hf = hueNorm * hueBins
+  const cf = chromaNorm * chromaBins
+  const h0 = Math.floor(hf) % hueBins
+  const h1 = (h0 + 1) % hueBins
+  const c0 = Math.min(Math.floor(cf), chromaBins - 1)
+  const c1 = Math.min(c0 + 1, chromaBins - 1)
+  const ht = hf - Math.floor(hf)
+  const ct = cf - Math.floor(cf)
+  const i00 = (h0 * chromaBins + c0) * 3
+  const i10 = (h1 * chromaBins + c0) * 3
+  const i01 = (h0 * chromaBins + c1) * 3
+  const i11 = (h1 * chromaBins + c1) * 3
+  const lerp = (a: number, b: number, t: number) => a * (1 - t) + b * t
+  return {
+    r: lerp(lerp(lut[i00]!, lut[i10]!, ht), lerp(lut[i01]!, lut[i11]!, ht), ct),
+    g: lerp(lerp(lut[i00 + 1]!, lut[i10 + 1]!, ht), lerp(lut[i01 + 1]!, lut[i11 + 1]!, ht), ct),
+    b: lerp(lerp(lut[i00 + 2]!, lut[i10 + 2]!, ht), lerp(lut[i01 + 2]!, lut[i11 + 2]!, ht), ct),
+  }
+}
+
+/** ringColors を明度帯スケーリング済み Linear RGB に変換した LUT */
+const scaledRingColorsLUT = computed<Float32Array>(() => {
+  const rc = props.data.ringColors
+  const lScale = bandLightnessScale()
+  const lut = new Float32Array(rc.length * 3)
+  for (let i = 0; i < rc.length; i++) {
+    const c = rc[i]!
+    _tmpBC.setRGB(c.r / 255, c.g / 255, c.b / 255, SRGBColorSpace)
+    _tmpBC.getHSL(_tmpHSL)
+    _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
+    _tmpBC.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
+    lut[i * 3] = _tmpBC.r
+    lut[i * 3 + 1] = _tmpBC.g
+    lut[i * 3 + 2] = _tmpBC.b
+  }
+  return lut
+})
+
+// === Worker セットアップ ===
+let terrainWorker: Worker | null = null
+let workerRequestId = 0
+const workerCallbacks = new Map<number, (resp: TerrainWorkerResponse) => void>()
+
+function getTerrainWorker(): Worker {
+  if (!terrainWorker) {
+    terrainWorker = new Worker(
+      new URL('@/infrastructure/terrainGeometryWorker.ts', import.meta.url),
+      { type: 'module' },
+    )
+    terrainWorker.onmessage = (e: MessageEvent<TerrainWorkerResponse>) => {
+      const cb = workerCallbacks.get(e.data.id)
+      if (cb) {
+        workerCallbacks.delete(e.data.id)
+        cb(e.data)
+      }
+    }
+  }
+  return terrainWorker
+}
+
+/** wheelColors を flat な Float32Array (r,g,b,...) に変換 */
+function flattenWheelColors(): Float32Array {
+  const wc = props.data.wheelColors
+  const arr = new Float32Array(wc.length * 3)
+  for (let i = 0; i < wc.length; i++) {
+    const c = wc[i]!
+    arr[i * 3] = c.r
+    arr[i * 3 + 1] = c.g
+    arr[i * 3 + 2] = c.b
+  }
+  return arr
+}
+
+/** Worker リクエスト用の共通パラメータを構築 */
+function buildWorkerParams(type: 'terrain' | 'refGrid'): TerrainWorkerRequest {
+  const id = ++workerRequestId
+  const cells = activeDensityCells.value
+  return {
+    id,
+    type,
+    hueBinCount: props.data.hueBinCount,
+    chromaBinCount: props.data.chromaBinCount,
+    wheelColors: flattenWheelColors(),
+    gamutMaxChroma: props.data.gamutMaxChroma,
+    maxChroma: props.data.maxChroma,
+    densityCells: cells.map(c => ({ hueBin: c.hueBin, chromaBin: c.chromaBin, density: c.density })),
+    logScale: !!props.logScale,
+    activeBand: props.activeBand,
+    angularSegments: ANGULAR_SEGMENTS,
+    radialSegments: RADIAL_SEGMENTS,
+    terrainRadius: TERRAIN_RADIUS,
+    heightScale: HEIGHT_SCALE,
+  }
+}
+
+/** Worker で terrain を構築し、結果を適用 */
+function buildTerrainAsync(): Promise<void> {
+  return new Promise((resolve) => {
+    const req = buildWorkerParams('terrain')
+    workerCallbacks.set(req.id, (resp) => {
+      applyTerrainBuffers(resp.positions, resp.colors)
+      resolve()
+    })
+    getTerrainWorker().postMessage(req)
+  })
+}
+
+/** Worker で refGrid を構築し、結果を適用 */
+function buildRefGridAsync(): Promise<void> {
+  return new Promise((resolve) => {
+    const req = buildWorkerParams('refGrid')
+    workerCallbacks.set(req.id, (resp) => {
+      applyRefGridBuffers(resp.positions, resp.colors, resp.dotPositions!, resp.dotColors!)
+      resolve()
+    })
+    getTerrainWorker().postMessage(req)
+  })
+}
+
+/** Worker から受け取った terrain バッファを Mesh に適用 */
+function applyTerrainBuffers(positions: Float32Array, colors: Float32Array) {
+  const angSegs = ANGULAR_SEGMENTS
+  const radSegs = RADIAL_SEGMENTS
+  const indices = buildDiscIndices(angSegs, radSegs)
+  const geo = new BufferGeometry()
+  geo.setAttribute('position', new Float32BufferAttribute(positions, 3))
+  geo.setAttribute('color', new Float32BufferAttribute(colors, 3))
+  geo.setIndex(indices)
+  geo.computeVertexNormals()
+
+  disposeObj(terrainMesh.value)
+  terrainMesh.value = new Mesh(geo, new MeshBasicMaterial({ vertexColors: true, side: DoubleSide }))
+
+  disposeObj(terrainWire.value)
+  const wireGeo = new WireframeGeometry(geo)
+  terrainWire.value = new LineSegments(wireGeo, new LineBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.15,
+  }))
+}
+
+/** Worker から受け取った refGrid バッファを Group に適用 */
+function applyRefGridBuffers(linePos: Float32Array, lineCol: Float32Array, dotPos: Float32Array, dotCol: Float32Array) {
+  const DOT_RADIUS = 0.008
+  const root = new Group()
+
+  if (linePos.length > 0) {
+    const lineGeo = new BufferGeometry()
+    lineGeo.setAttribute('position', new Float32BufferAttribute(linePos, 3))
+    lineGeo.setAttribute('color', new Float32BufferAttribute(lineCol, 3))
+    root.add(new LineSegments(lineGeo, new LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.6,
+    })))
+  }
+
+  const dotCount = dotPos.length / 3
+  if (dotCount > 0) {
+    const dotMat = new MeshBasicMaterial({ transparent: true, opacity: 0.7 })
+    const im = new InstancedMesh(dotSphereGeo, dotMat, dotCount)
+    const m = new Matrix4()
+    const p = new Vector3()
+
+    for (let i = 0; i < dotCount; i++) {
+      const i3 = i * 3
+      p.set(dotPos[i3]!, dotPos[i3 + 1]!, dotPos[i3 + 2]!)
+      m.makeScale(DOT_RADIUS, DOT_RADIUS, DOT_RADIUS)
+      m.setPosition(p)
+      im.setMatrixAt(i, m)
+      _tmpColor.setRGB(dotCol[i3]!, dotCol[i3 + 1]!, dotCol[i3 + 2]!)
+      im.setColorAt(i, _tmpColor)
+    }
+    im.instanceMatrix.needsUpdate = true
+    if (im.instanceColor) im.instanceColor.needsUpdate = true
+    root.add(im)
+  }
+
+  disposeRefGrid(refGrid.value)
+  refGrid.value = root
+}
+
 // === refs ===
 const terrainMesh = shallowRef<Mesh | null>(null)
 const terrainWire = shallowRef<LineSegments | null>(null)
@@ -270,22 +479,22 @@ const _tmpColor = new Color()
 const _tmpBC = new Color()
 const _tmpHSL = { h: 0, s: 0, l: 0 }
 
-function buildTerrain() {
-  const { hueBinCount, chromaBinCount, wheelColors, gamutMaxChroma, maxChroma } = props.data
+/** 地形の頂点座標・カラー配列を計算する（LUT 使用版） */
+function computeTerrainBuffers(positions: Float32Array, colors: Float32Array) {
+  const { hueBinCount, chromaBinCount, gamutMaxChroma, maxChroma } = props.data
   const densityGrid = buildDensityGrid(activeDensityCells.value, hueBinCount, chromaBinCount)
   const globalMaxC = Math.max(...gamutMaxChroma)
-  const lScale = bandLightnessScale()
+  const baseGround = bandBaseColor()
+  const lut = scaledWheelColorsLUT.value
 
   const angSegs = ANGULAR_SEGMENTS
   const radSegs = RADIAL_SEGMENTS
-  const vertexCount = (angSegs + 1) * (radSegs + 1)
-  const positions = new Float32Array(vertexCount * 3)
-  const colors = new Float32Array(vertexCount * 3)
-  const baseGround = bandBaseColor()
 
   for (let ai = 0; ai <= angSegs; ai++) {
     const hueNorm = ai / angSegs
     const theta = hueNorm * Math.PI * 2
+    const cosTheta = Math.cos(theta)
+    const sinTheta = Math.sin(theta)
     const maxR = gamutRadiusAt(gamutMaxChroma, globalMaxC, hueNorm)
     const gamutC = sampleGamutMaxChroma(gamutMaxChroma, hueNorm)
     for (let ri = 0; ri <= radSegs; ri++) {
@@ -303,23 +512,28 @@ function buildTerrain() {
 
       const vi = ai * (radSegs + 1) + ri
       const vi3 = vi * 3
-      positions[vi3] = radius * Math.cos(theta)
+      positions[vi3] = radius * cosTheta
       positions[vi3 + 1] = height
-      positions[vi3 + 2] = radius * Math.sin(theta)
+      positions[vi3 + 2] = radius * sinTheta
 
-      const baseColor = sampleColor(wheelColors, hueBinCount, chromaBinCount, hueNorm, densityChromaNorm)
-      _tmpBC.setRGB(baseColor.r / 255, baseColor.g / 255, baseColor.b / 255, SRGBColorSpace)
-      _tmpBC.getHSL(_tmpHSL)
-      _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
-      _tmpBC.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
+      // LUT から HSL 変換済み Linear RGB を直接取得（getHSL/setHSL 不要）
+      const sc = sampleScaledColor(lut, hueBinCount, chromaBinCount, hueNorm, densityChromaNorm)
       const blend = density > 0.001 ? 1.0 : chromaNorm * 0.25
-      _tmpColor.copy(baseGround).lerp(_tmpBC, blend)
-
-      colors[vi3] = _tmpColor.r
-      colors[vi3 + 1] = _tmpColor.g
-      colors[vi3 + 2] = _tmpColor.b
+      colors[vi3] = baseGround.r + (sc.r - baseGround.r) * blend
+      colors[vi3 + 1] = baseGround.g + (sc.g - baseGround.g) * blend
+      colors[vi3 + 2] = baseGround.b + (sc.b - baseGround.b) * blend
     }
   }
+}
+
+function buildTerrain() {
+  const angSegs = ANGULAR_SEGMENTS
+  const radSegs = RADIAL_SEGMENTS
+  const vertexCount = (angSegs + 1) * (radSegs + 1)
+  const positions = new Float32Array(vertexCount * 3)
+  const colors = new Float32Array(vertexCount * 3)
+
+  computeTerrainBuffers(positions, colors)
 
   const indices = buildDiscIndices(angSegs, radSegs)
   const geo = new BufferGeometry()
@@ -332,6 +546,31 @@ function buildTerrain() {
   terrainMesh.value = new Mesh(geo, new MeshBasicMaterial({ vertexColors: true, side: DoubleSide }))
 
   // ワイヤーフレーム
+  disposeObj(terrainWire.value)
+  const wireGeo = new WireframeGeometry(geo)
+  terrainWire.value = new LineSegments(wireGeo, new LineBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.15,
+  }))
+}
+
+/** 既存ジオメトリの position/color バッファを差分更新（バンド切替用） */
+function updateTerrainBuffers() {
+  const mesh = terrainMesh.value
+  if (!mesh) { buildTerrain(); return }
+
+  const geo = mesh.geometry
+  const posAttr = geo.getAttribute('position')
+  const colorAttr = geo.getAttribute('color')
+  if (!posAttr || !colorAttr) { buildTerrain(); return }
+
+  const positions = posAttr.array as Float32Array
+  const colors = colorAttr.array as Float32Array
+  computeTerrainBuffers(positions, colors)
+  posAttr.needsUpdate = true
+  colorAttr.needsUpdate = true
+  geo.computeVertexNormals()
+
+  // ワイヤーフレームも更新
   disposeObj(terrainWire.value)
   const wireGeo = new WireframeGeometry(geo)
   terrainWire.value = new LineSegments(wireGeo, new LineBasicMaterial({
@@ -769,21 +1008,18 @@ function updateHueRingColors() {
   if (!colorAttr) return
   const arr = colorAttr.array as Float32Array
   const segs = 120
-  const lScale = bandLightnessScale()
+  const lut = scaledRingColorsLUT.value
 
   for (let i = 0; i <= segs; i++) {
     const hueNorm = i / segs
     const sectorIdx = Math.floor(hueNorm * hueBinCount) % hueBinCount
-    const rgb = props.data.ringColors[sectorIdx] ?? { r: 128, g: 128, b: 128 }
-    _tmpColor.setRGB(rgb.r / 255, rgb.g / 255, rgb.b / 255, SRGBColorSpace)
-    _tmpColor.getHSL(_tmpHSL)
-    _tmpHSL.l = Math.min(1, _tmpHSL.l * lScale)
-    _tmpColor.setHSL(_tmpHSL.h, _tmpHSL.s, _tmpHSL.l)
+    const i3 = sectorIdx * 3
+    const r = lut[i3]!, g = lut[i3 + 1]!, b = lut[i3 + 2]!
 
     const vi = i * 2
-    arr[vi * 3] = _tmpColor.r; arr[vi * 3 + 1] = _tmpColor.g; arr[vi * 3 + 2] = _tmpColor.b
+    arr[vi * 3] = r; arr[vi * 3 + 1] = g; arr[vi * 3 + 2] = b
     const vo = vi + 1
-    arr[vo * 3] = _tmpColor.r; arr[vo * 3 + 1] = _tmpColor.g; arr[vo * 3 + 2] = _tmpColor.b
+    arr[vo * 3] = r; arr[vo * 3 + 1] = g; arr[vo * 3 + 2] = b
   }
   colorAttr.needsUpdate = true
 }
@@ -792,48 +1028,75 @@ function updateHueRingColors() {
 /** 初回データ到着時、Canvas が未マウントならアニメーション予約 */
 let pendingAnimation = false
 
-// データ変更時: 全要素を再構築 + 初回のみ登場アニメーション
-watch(
-  () => props.data,
-  (newData) => {
-    buildTerrain()
-    buildGround()
-    buildGrid()
-    buildHueRing()
-    buildRefGrid()
-    buildCenterAxis()
+const isMounted = ref(false)
 
+// 段階的構築のキャンセル用
+let deferredBuildId = 0
+
+/** ジオメトリを段階的に構築する。terrain は Worker で非同期構築、残りは次フレーム以降に分割 */
+function buildAllGeometry(newData: HueAnalysisResult) {
+  // 前回の遅延構築をキャンセル
+  const buildId = ++deferredBuildId
+
+  // Phase 1: 地形メッシュを Worker で非同期構築（最重要 — Canvas 表示の条件）
+  buildTerrainAsync().then(() => {
+    if (buildId !== deferredBuildId) return
+
+    // アニメーション設定
     if (!animatedTerrainData.has(newData)) {
       animScaleY.value = 0
       if (isMounted.value) {
-        // Canvas 既存 → 即座に開始
         startRiseAnimation()
       } else {
-        // Canvas 未生成 → onMounted で開始
         pendingAnimation = true
       }
     } else {
       animScaleY.value = 1
     }
+
+    // Phase 2: 残りのジオメトリを次フレーム以降に分割構築
+    requestAnimationFrame(() => {
+      if (buildId !== deferredBuildId) return
+      buildGround()
+      buildGrid()
+      buildCenterAxis()
+
+      // Phase 3: refGrid も Worker で非同期構築
+      buildRefGridAsync().then(() => {
+        if (buildId !== deferredBuildId) return
+        requestAnimationFrame(() => {
+          if (buildId !== deferredBuildId) return
+          buildHueRing()
+        })
+      })
+    })
+  })
+}
+
+// データ変更時: 全要素を段階的に再構築
+watch(
+  () => props.data,
+  (newData) => {
+    buildAllGeometry(newData)
   },
   { immediate: true },
 )
 
-// バンド / ログスケール変更時: 密度依存の要素のみ再構築、色のみの要素は軽量更新
+// バンド / ログスケール変更時: 地形はバッファ差分更新、残りは軽量更新 + refGrid のみ再構築
 watch(
   [() => props.activeBand, () => props.logScale],
   () => {
-    // 密度データが変わる → 地形 + リファレンスグリッドは再構築必須
-    buildTerrain()
-    buildRefGrid()
+    // 地形: 既存ジオメトリの position/color バッファだけ書き換え
+    updateTerrainBuffers()
     // 色だけ変わる → マテリアル色 / 頂点カラーのみ更新
     updateGroundColor()
     updateGridColors()
     updateHueRingColors()
+    // refGrid は構造が可変なので Worker で非同期再構築
+    buildRefGridAsync()
   },
 )
 
-const isMounted = ref(false)
 onMounted(() => {
   isMounted.value = true
   if (pendingAnimation) {
@@ -849,6 +1112,12 @@ onMounted(() => {
 
 onScopeDispose(() => {
   cancelAnimationFrame(animRafId)
+  // Worker をクリーンアップ
+  if (terrainWorker) {
+    terrainWorker.terminate()
+    terrainWorker = null
+  }
+  workerCallbacks.clear()
   disposeObj(terrainMesh.value)
   disposeObj(terrainWire.value)
   disposeObj(groundMesh.value)

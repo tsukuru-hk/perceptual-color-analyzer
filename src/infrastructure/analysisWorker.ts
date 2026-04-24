@@ -86,6 +86,7 @@ self.onmessage = (e: MessageEvent<AnalysisRequest>) => {
       const r = generateHueAnalysis(source)
       if (r.isSuccess()) {
         response = { requestId, imageId, analysisKey, status: 'success', hueAnalysisData: r.value }
+        if (r.value.bandMask) transferList.push(r.value.bandMask.buffer)
       } else {
         response = { requestId, imageId, analysisKey, status: 'error', errorMessage: r.error.message }
       }

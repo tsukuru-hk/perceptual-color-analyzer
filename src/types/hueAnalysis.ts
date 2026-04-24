@@ -93,4 +93,10 @@ export interface HueAnalysisResult {
   readonly totalChromaticPixels: number
   /** 不透明ピクセル総数 (無彩色含む) */
   readonly totalOpaquePixels: number
+  /**
+   * 明度帯バンドマスク。画像全ピクセル分。
+   * 0=dark, 1=mid, 2=light, 255=透明/無彩色。
+   * LightnessBandPreview で再計算不要にするためのキャッシュ。
+   */
+  readonly bandMask?: Uint8Array
 }

@@ -152,6 +152,10 @@ export function generateHueAnalysis(
   let maxChroma = 0
   let opaquePixels = 0
 
+  // バンドマスク: 0=dark, 1=mid, 2=light, 255=透明/無彩色
+  const bandMask = new Uint8Array(pixelCount)
+  bandMask.fill(255)
+
   // === 1パスでピクセルを走査 ===
   for (let i = 0; i < pixelCount; i++) {
     const offset = i * 4
@@ -172,11 +176,12 @@ export function generateHueAnalysis(
     // all グリッド
     allGrid.totalPixels++
 
-    // 明度帯グリッド
+    // 明度帯グリッド + バンドマスク
     for (let bi = 0; bi < LIGHTNESS_BANDS.length; bi++) {
       const band = LIGHTNESS_BANDS[bi]!
       if (result.l >= band.range[0] && result.l < band.range[1]) {
         bandGrids[bi]!.totalPixels++
+        bandMask[i] = bi // 0=dark, 1=mid, 2=light
         break
       }
     }
@@ -225,6 +230,7 @@ export function generateHueAnalysis(
       lightnessBands: emptyLightnessBands,
       totalChromaticPixels: 0,
       totalOpaquePixels: opaquePixels,
+      bandMask,
     })
   }
 
@@ -311,5 +317,6 @@ export function generateHueAnalysis(
     lightnessBands,
     totalChromaticPixels: allGrid.totalPixels,
     totalOpaquePixels: opaquePixels,
+    bandMask,
   })
 }

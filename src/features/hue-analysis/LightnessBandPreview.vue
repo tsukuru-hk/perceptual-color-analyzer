@@ -15,6 +15,8 @@ import { createPixelConverter } from '@/infrastructure/colorSpaceConverter'
 const props = defineProps<{
   source: ColorAwareImageData
   activeBand: 'all' | 'dark' | 'mid' | 'light'
+  /** 事前計算済みバンドマスク（hueAnalysis から取得）。なければ自前で計算 */
+  precomputedBandMask?: Uint8Array
 }>()
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -23,7 +25,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const bandMask = shallowRef<Uint8Array | null>(null)
 const maskSourceId = ref<string>('')
 
-/** ソース画像から全ピクセルのバンドマスクを一括計算 */
+/** ソース画像から全ピクセルのバンドマスクを一括計算（フォールバック用） */
 function buildBandMask(): Uint8Array {
   const { imageData, colorSpace } = props.source
   const { data, width, height } = imageData
@@ -50,10 +52,15 @@ function buildBandMask(): Uint8Array {
 
 const BAND_INDEX: Record<string, number> = { dark: 0, mid: 1, light: 2 }
 
-// ソース変更時にマスクを再計算
+// ソース変更時にマスクを設定（事前計算済みがあればそれを使用）
 watch(
-  () => props.source,
+  [() => props.source, () => props.precomputedBandMask],
   () => {
+    if (props.precomputedBandMask) {
+      bandMask.value = props.precomputedBandMask
+      maskSourceId.value = 'precomputed'
+      return
+    }
     const id = `${props.source.imageData.width}x${props.source.imageData.height}_${props.source.colorSpace}`
     if (maskSourceId.value !== id) {
       bandMask.value = buildBandMask()

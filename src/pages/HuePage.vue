@@ -38,6 +38,7 @@
             v-if="selectedImage"
             :source="selectedImage.colorAwareImageData"
             :active-band="activeBand"
+            :precomputed-band-mask="hueResult?.bandMask"
             class="shadow-md"
           />
         </div>
