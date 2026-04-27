@@ -23,6 +23,10 @@
           </div>
         </template>
       </SplitPane>
+      <!-- フルワイドモード：スロットに全幅を委ねる -->
+      <div v-else-if="selectedImage && fullWidth" class="bg-card p-4">
+        <slot :color-aware-image-data="selectedImage.colorAwareImageData" />
+      </div>
       <!-- 通常モード：固定 2 カラム -->
       <div v-else-if="selectedImage" class="grid grid-cols-2 gap-6 bg-card p-4">
         <div>
@@ -75,10 +79,13 @@ withDefaults(defineProps<{
   splitPane?: boolean
   /** SplitPane の高さクラス（デフォルト: h-[70vh]） */
   paneHeight?: string
+  /** フルワイドモード（2 カラムを無効化し、スロットに全幅を委ねる） */
+  fullWidth?: boolean
 }>(), {
   placeholderText: '画像をアップロードすると分析結果が表示されます',
   splitPane: false,
   paneHeight: 'h-[70vh]',
+  fullWidth: false,
 })
 
 const { images, selectedImage, loadProgress, addImage } = useImageStore()
