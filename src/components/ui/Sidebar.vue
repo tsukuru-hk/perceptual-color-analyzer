@@ -34,7 +34,7 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { LayoutDashboard, Droplets, Sun, Rainbow, Box, BarChart3, LayoutGrid } from 'lucide-vue-next'
+import { LayoutDashboard, Droplets, Sun, Rainbow, Box, BarChart3 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { cn } from '@/lib/utils'
 import { routeImports, type RoutePath } from '@/router'
@@ -67,8 +67,6 @@ const items: NavItem[] = [
   { path: '/hue', label: '色相 (Hue)', shortLabel: '色相', icon: Rainbow },
   { path: '/gamut', label: '3D ガマット', shortLabel: '3D', icon: Box },
   { path: '/distribution', label: '色分布', shortLabel: '色分布', icon: BarChart3 },
-  { type: 'divider' },
-  { path: '/design', label: 'デザインシステム', shortLabel: 'デザイン', icon: LayoutGrid },
 ]
 
 function isActive(path: RoutePath): boolean {

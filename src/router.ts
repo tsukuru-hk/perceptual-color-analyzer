@@ -1,5 +1,5 @@
 /**
- * クライアントルーティング：分析各ページとデザインシステム。
+ * クライアントルーティング：分析各ページ。
  */
 import { createRouter, createWebHistory } from 'vue-router'
 import type { Component } from 'vue'
@@ -12,7 +12,6 @@ export type RoutePath =
   | '/hue'
   | '/gamut'
   | '/distribution'
-  | '/design'
 
 /**
  * ルートパス → 動的 import 関数のマップ。
@@ -25,7 +24,6 @@ export const routeImports = {
   '/hue': () => import('@/pages/HuePage.vue'),
   '/gamut': () => import('@/pages/GamutPage.vue'),
   '/distribution': () => import('@/pages/DistributionPage.vue'),
-  '/design': () => import('@/pages/DesignSystemPage.vue'),
 } as const satisfies Record<RoutePath, () => Promise<{ default: Component }>>
 
 const router = createRouter({
@@ -37,7 +35,6 @@ const router = createRouter({
     { path: '/hue', name: 'hue', component: routeImports['/hue'] },
     { path: '/gamut', name: 'gamut', component: routeImports['/gamut'] },
     { path: '/distribution', name: 'distribution', component: routeImports['/distribution'] },
-    { path: '/design', name: 'design', component: routeImports['/design'] },
   ],
 })
 

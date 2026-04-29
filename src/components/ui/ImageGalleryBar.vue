@@ -17,7 +17,10 @@
         <img
           :src="img.thumbnailUrl"
           :alt="img.fileName"
-          class="h-10 w-10 rounded object-cover"
+          :class="cn(
+            'h-10 w-10 rounded object-cover transition-opacity',
+            img.id !== selectedId && 'opacity-50',
+          )"
         />
         <span class="max-w-[140px] truncate">{{ img.fileName }}</span>
         <button
