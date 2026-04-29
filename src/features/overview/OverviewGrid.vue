@@ -57,7 +57,7 @@
         <h3 class="mb-2 text-sm font-medium text-muted-foreground">色分布</h3>
         <AnalysisErrorCard v-if="clusterError" :message="clusterErrorMsg" @retry="retryAnalysis(imageId, 'colorClustering')" />
         <div v-else-if="clusterData && row2Visible">
-          <ClusterBubbleChart :data="clusterData" :height="320" />
+          <ClusterBubbleChart :key="imageId" :data="clusterData" :height="320" />
         </div>
         <AnalysisSpinner v-else />
       </div>
