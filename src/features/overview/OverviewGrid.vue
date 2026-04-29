@@ -1,99 +1,80 @@
 <template>
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-    <!-- Row 1: オリジナル画像 -->
-    <OverviewCard
-      title="オリジナル画像"
-      to="/"
-      :loading="false"
-      :error="false"
-    >
-      <ImageCanvas :image-data="colorAwareImageData.imageData" />
-    </OverviewCard>
-
-    <!-- Row 1: 明度グレースケール -->
-    <OverviewCard
-      title="明度グレースケール"
-      to="/lightness"
-      :loading="lightnessLoading"
-      :error="lightnessError"
-      @retry="retryAnalysis(imageId, 'lightnessMap')"
-    >
-      <ImageCanvas v-if="lightnessMapData" :image-data="lightnessMapData" />
-    </OverviewCard>
-
-    <!-- Row 1: 彩度グレースケール -->
-    <OverviewCard
-      title="彩度グレースケール"
-      to="/chroma"
-      :loading="chromaLoading"
-      :error="chromaError"
-      @retry="retryAnalysis(imageId, 'chromaMap')"
-    >
-      <ImageCanvas v-if="chromaMapData" :image-data="chromaMapData" />
-    </OverviewCard>
-
-    <!-- Row 2: 色相テレイン -->
-    <OverviewCard
-      ref="hueCardRef"
-      title="色相分析"
-      to="/hue"
-      :loading="hueLoading"
-      :error="hueError"
-      @retry="retryAnalysis(imageId, 'hueAnalysis')"
-    >
-      <div v-if="hueData && row2Visible" class="h-full w-full">
-        <HueTerrainChart
-          :data="hueData"
-          active-band="all"
-          :log-scale="false"
-          class="h-full w-full"
-        />
+  <div class="space-y-6">
+    <!-- Row 1: オリジナル / 明度 / 彩度 -->
+    <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div>
+        <h3 class="mb-2 text-sm font-medium text-muted-foreground">オリジナル画像</h3>
+        <ImageCanvas :image-data="colorAwareImageData.imageData" />
       </div>
-    </OverviewCard>
 
-    <!-- Row 2: 3D ガマット -->
-    <OverviewCard
-      title="3D ガマット"
-      to="/gamut"
-      :loading="gamutLoading"
-      :error="gamutError"
-      @retry="retryAnalysis(imageId, 'gamutPointCloud')"
-    >
-      <div v-if="gamutData && row2Visible" class="h-full w-full">
-        <GamutScene
-          :point-cloud-data="gamutData"
-          :color-space="colorAwareImageData.colorSpace"
-          mode="bulk"
-          :brush-data="EMPTY_BRUSH_DATA"
-        />
+      <div>
+        <h3 class="mb-2 text-sm font-medium text-muted-foreground">明度グレースケール</h3>
+        <AnalysisErrorCard v-if="lightnessError" :message="lightnessErrorMsg" @retry="retryAnalysis(imageId, 'lightnessMap')" />
+        <ImageCanvas v-else-if="lightnessMapData" :image-data="lightnessMapData" />
+        <AnalysisSpinner v-else />
       </div>
-    </OverviewCard>
 
-    <!-- Row 2: 色分布 -->
-    <OverviewCard
-      title="色分布"
-      to="/distribution"
-      :loading="clusterLoading"
-      :error="clusterError"
-      @retry="retryAnalysis(imageId, 'colorClustering')"
-    >
-      <div v-if="clusterData && row2Visible" class="h-full w-full flex items-center justify-center">
-        <ClusterBubbleChart :data="clusterData" :height="200" />
+      <div>
+        <h3 class="mb-2 text-sm font-medium text-muted-foreground">彩度グレースケール</h3>
+        <AnalysisErrorCard v-if="chromaError" :message="chromaErrorMsg" @retry="retryAnalysis(imageId, 'chromaMap')" />
+        <ImageCanvas v-else-if="chromaMapData" :image-data="chromaMapData" />
+        <AnalysisSpinner v-else />
       </div>
-    </OverviewCard>
+    </div>
+
+    <!-- Row 2: 色相 / 3D ガマット / 色分布 -->
+    <div ref="row2Ref" class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div>
+        <h3 class="mb-2 text-sm font-medium text-muted-foreground">色相分析</h3>
+        <AnalysisErrorCard v-if="hueError" :message="hueErrorMsg" @retry="retryAnalysis(imageId, 'hueAnalysis')" />
+        <div v-else-if="hueData && row2Visible" class="relative h-[320px] overflow-hidden rounded-lg">
+          <HueTerrainChart
+            :data="hueData"
+            active-band="all"
+            :log-scale="false"
+            class="h-full w-full"
+          />
+        </div>
+        <AnalysisSpinner v-else />
+      </div>
+
+      <div>
+        <h3 class="mb-2 text-sm font-medium text-muted-foreground">3D ガマット</h3>
+        <AnalysisErrorCard v-if="gamutError" :message="gamutErrorMsg" @retry="retryAnalysis(imageId, 'gamutPointCloud')" />
+        <div v-else-if="gamutData && row2Visible" class="relative h-[320px] overflow-hidden rounded-lg">
+          <GamutScene
+            :point-cloud-data="gamutData"
+            :color-space="colorAwareImageData.colorSpace"
+            mode="bulk"
+            :brush-data="EMPTY_BRUSH_DATA"
+            :show-toolbar="false"
+          />
+        </div>
+        <AnalysisSpinner v-else />
+      </div>
+
+      <div>
+        <h3 class="mb-2 text-sm font-medium text-muted-foreground">色分布</h3>
+        <AnalysisErrorCard v-if="clusterError" :message="clusterErrorMsg" @retry="retryAnalysis(imageId, 'colorClustering')" />
+        <div v-else-if="clusterData && row2Visible">
+          <ClusterBubbleChart :data="clusterData" :height="320" />
+        </div>
+        <AnalysisSpinner v-else />
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, defineAsyncComponent } from 'vue'
 import type { ColorAwareImageData } from '@/domain/colorSpace'
-import type { GamutPointCloudData } from '@/types/analysis'
+import type { GamutPointCloudData, AnalysisError } from '@/types/analysis'
 import type { HueAnalysisResult } from '@/types/hueAnalysis'
 import type { ColorClusterResult } from '@/domain/colorCluster'
 import { isAnalysisError } from '@/types/analysis'
 import { useImageStore } from '@/composables/useImageStore'
+import { AnalysisSpinner, AnalysisErrorCard } from '@/components/ui'
 import ImageCanvas from '@/features/image-analysis/ImageCanvas.vue'
-import OverviewCard from './OverviewCard.vue'
 
 const HueTerrainChart = defineAsyncComponent(() =>
   import('@/features/hue-analysis/HueTerrainChart.vue'),
@@ -113,7 +94,6 @@ const { selectedImage, getAnalysis, isAnalysisLoading, retryAnalysis } = useImag
 
 const imageId = computed(() => selectedImage.value?.id ?? '')
 
-/** GamutScene に渡す空のブラシデータ */
 const EMPTY_BRUSH_DATA: GamutPointCloudData = {
   positions: new Float32Array(0),
   colors: new Float32Array(0),
@@ -121,9 +101,9 @@ const EMPTY_BRUSH_DATA: GamutPointCloudData = {
   totalPixels: 0,
 }
 
-// ─── IntersectionObserver: Row 2 の描画をビューポート内に限定 ───
+// ─── IntersectionObserver: Row 2 の描画をビューポート到達まで遅延 ───
 
-const hueCardRef = ref<InstanceType<typeof OverviewCard> | null>(null)
+const row2Ref = ref<HTMLElement | null>(null)
 const row2Visible = ref(false)
 let observer: IntersectionObserver | null = null
 
@@ -139,20 +119,17 @@ onMounted(() => {
         }
       }
     },
-    { rootMargin: '100px' },
+    { rootMargin: '200px' },
   )
-  // hueCardRef は OverviewCard コンポーネント。$el で DOM 要素取得
-  const el = (hueCardRef.value as unknown as { $el: HTMLElement })?.$el
-  if (el) observer.observe(el)
+  if (row2Ref.value) observer.observe(row2Ref.value)
 })
 
 onUnmounted(() => {
   observer?.disconnect()
 })
 
-// ─── 解析リクエスト: 優先順に呼び出し（Worker 逐次処理のため順序が重要） ───
+// ─── 解析リクエスト: 優先順に呼び出し ───
 
-// Row 1: 軽量解析を先に
 const rawLightnessMap = computed(() => {
   const id = imageId.value
   if (!id) return null
@@ -165,7 +142,6 @@ const rawChromaMap = computed(() => {
   return getAnalysis(id, props.colorAwareImageData, 'chromaMap')
 })
 
-// Row 2: 重い解析は後
 const rawHueResult = computed(() => {
   const id = imageId.value
   if (!id) return null
@@ -184,7 +160,7 @@ const rawClusterResult = computed(() => {
   return getAnalysis(id, props.colorAwareImageData, 'colorClustering')
 })
 
-// ─── データ抽出（エラーを除外） ───
+// ─── データ抽出 ───
 
 const lightnessMapData = computed<ImageData | null>(() => {
   const r = rawLightnessMap.value
@@ -211,17 +187,17 @@ const clusterData = computed<ColorClusterResult | null>(() => {
   return r && !isAnalysisError(r) ? r : null
 })
 
-// ─── Loading / Error 状態 ───
-
-const lightnessLoading = computed(() => isAnalysisLoading(imageId.value, 'lightnessMap'))
-const chromaLoading = computed(() => isAnalysisLoading(imageId.value, 'chromaMap'))
-const hueLoading = computed(() => isAnalysisLoading(imageId.value, 'hueAnalysis'))
-const gamutLoading = computed(() => isAnalysisLoading(imageId.value, 'gamutPointCloud'))
-const clusterLoading = computed(() => isAnalysisLoading(imageId.value, 'colorClustering'))
+// ─── Error 状態 ───
 
 const lightnessError = computed(() => isAnalysisError(rawLightnessMap.value))
 const chromaError = computed(() => isAnalysisError(rawChromaMap.value))
 const hueError = computed(() => isAnalysisError(rawHueResult.value))
 const gamutError = computed(() => isAnalysisError(rawGamutCloud.value))
 const clusterError = computed(() => isAnalysisError(rawClusterResult.value))
+
+const lightnessErrorMsg = computed(() => (rawLightnessMap.value as AnalysisError)?.message ?? '')
+const chromaErrorMsg = computed(() => (rawChromaMap.value as AnalysisError)?.message ?? '')
+const hueErrorMsg = computed(() => (rawHueResult.value as AnalysisError)?.message ?? '')
+const gamutErrorMsg = computed(() => (rawGamutCloud.value as AnalysisError)?.message ?? '')
+const clusterErrorMsg = computed(() => (rawClusterResult.value as AnalysisError)?.message ?? '')
 </script>

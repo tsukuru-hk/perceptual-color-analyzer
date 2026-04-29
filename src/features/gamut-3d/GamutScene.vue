@@ -1,6 +1,7 @@
 <template>
   <div class="absolute inset-0">
     <GamutToolbar
+      v-if="showToolbar"
       :mode="mode"
       :brush-point-count="brushData.count"
       @set-mode="$emit('set-mode', $event)"
@@ -53,8 +54,11 @@ const props = withDefaults(defineProps<{
   colorSpace?: ColorSpace
   mode: GamutMode
   brushData: GamutPointCloudData
+  /** ツールバー（自動/手動切替）を表示するか */
+  showToolbar?: boolean
 }>(), {
   colorSpace: 'srgb',
+  showToolbar: true,
 })
 
 defineEmits<{
