@@ -108,6 +108,7 @@ import ExplanationModal from '@/components/ui/ExplanationModal.vue'
 import ImageGalleryBar from '@/components/ui/ImageGalleryBar.vue'
 import ImageCanvas from '@/features/image-analysis/ImageCanvas.vue'
 import { useImageStore } from '@/composables/useImageStore'
+import { usePasteImage } from '@/composables/usePasteImage'
 import { useMediaQuery } from '@/composables/useMediaQuery'
 import { useToast } from '@/composables/useToast'
 import { useLottie } from '@/composables/useLottie'
@@ -179,6 +180,9 @@ async function onFilesSelected(files: File[]): Promise<void> {
     })
   }
 }
+
+// クリップボードの画像を Cmd/Ctrl+V で貼り付けても追加できるようにする
+usePasteImage(onFilesSelected)
 
 // ── タイプライターエフェクト ──
 const typedCount = ref(0)
