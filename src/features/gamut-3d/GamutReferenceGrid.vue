@@ -33,7 +33,7 @@ const L_STEPS = 16
 /** 境界の Hue 分割数 */
 const H_STEPS = 36
 /** 境界ドットの半径 */
-const DOT_RADIUS = 0.008
+const DOT_RADIUS = 0.016
 /** L 軸の半分の高さ */
 const HALF_HEIGHT = 0.5 * DEFAULT_GAMUT_SCALE.lightnessScale
 
