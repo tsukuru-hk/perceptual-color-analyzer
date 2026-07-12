@@ -33,11 +33,12 @@
         />
       </div>
     </template>
-    <template #default="{ colorAwareImageData }">
+    <template #default>
       <AnalysisErrorCard v-if="pointCloudError" :message="pointCloudError.message" @retry="retryPointCloud" />
       <template v-else-if="pointCloudResult">
         <GamutScene
           ref="gamutSceneRef"
+          v-model:show-chrome="showChrome"
           :point-cloud-data="pointCloudResult"
           :mode="mode"
           :brush-data="brushData"
@@ -45,10 +46,18 @@
           @set-mode="setMode"
           @clear-brush="clearBrushPoints"
         />
-        <!-- 分析タイトル + PNG ダウンロード（オーバーレイ） -->
-        <div class="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2">
-          <span class="rounded-lg border border-white/20 bg-black/40 px-3 py-1 text-sm font-semibold text-white/90 backdrop-blur-sm">3Dガマット</span>
+        <!-- 分析タイトル（中央左）: 明度ガイドと重ならないよう中央を空ける -->
+        <span v-if="showChrome" class="absolute right-[calc(50%+4rem)] top-3 z-10 rounded-lg border border-white/20 bg-black/40 px-3 py-1 text-sm font-semibold text-white/90 backdrop-blur-sm">3Dガマット</span>
+        <!-- PNG / CSV ダウンロード（中央右） -->
+        <div v-if="showChrome" class="absolute left-[calc(50%+4rem)] top-3 z-10 flex items-center gap-2">
           <DownloadButton variant="overlay" :disabled="isExporting" @click="downloadGamut3d" />
+          <DataDownloadButton
+            variant="overlay"
+            label="CSV"
+            title="3D点群を CSV でダウンロード（AIに3D構造を解析させる用）"
+            :disabled="isDataExporting"
+            @click="downloadGamutData"
+          />
         </div>
       </template>
       <AnalysisSpinner v-else />
@@ -58,16 +67,18 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
-import { AnalysisPageLayout, AnalysisSpinner, AnalysisErrorCard, ExplanationContent, DownloadButton } from '@/components/ui'
+import { AnalysisPageLayout, AnalysisSpinner, AnalysisErrorCard, ExplanationContent, DownloadButton, DataDownloadButton } from '@/components/ui'
 import type { ExplanationSection } from '@/components/ui'
 import GamutBrushOverlay from '@/features/gamut-3d/GamutBrushOverlay.vue'
 import ImageCanvas from '@/features/image-analysis/ImageCanvas.vue'
 import { useImageStore } from '@/composables/useImageStore'
 import { useAnalysisResult } from '@/composables/useAnalysisResult'
 import { useAnalysisPngExport } from '@/composables/useAnalysisPngExport'
+import { useAnalysisDataExport } from '@/composables/useAnalysisDataExport'
 import { useToast } from '@/composables/useToast'
 import { exportCanvasAsPng } from '@/infrastructure/pngExport'
-import { EXPORT_SUFFIX } from '@/domain/exportFileName'
+import { EXPORT_SUFFIX, DATA_EXPORT_SUFFIX } from '@/domain/exportFileName'
+import { buildGamutPointsCsv } from '@/domain/analysisExport'
 import {
   useGamutBrush,
   MAX_BRUSH_POINTS,
@@ -80,15 +91,39 @@ const GamutScene = defineAsyncComponent(() =>
 const { selectedImage, images } = useImageStore()
 const { toast } = useToast()
 const { exportPng, isExporting } = useAnalysisPngExport()
+const { exportData, isExporting: isDataExporting } = useAnalysisDataExport()
 
 /** 3Dガマットシーン（PNG エクスポート用の Canvas 取得に使用） */
 const gamutSceneRef = ref<{ captureCanvas: () => HTMLCanvasElement | null } | null>(null)
+
+/** 操作パネル（DLボタン・タイトル・各種トグル）の表示状態。GamutScene の 👁 トグルと連動 */
+const showChrome = ref(true)
 
 /** 3Dガマットを PNG として保存する */
 function downloadGamut3d() {
   exportPng(EXPORT_SUFFIX.gamut3d, (filename) => {
     const canvas = gamutSceneRef.value?.captureCanvas()
     return canvas ? exportCanvasAsPng(canvas, filename) : null
+  })
+}
+
+/** 3Dガマットの生ポイントクラウドを CSV（AI が3D構造を解析する用）として保存する */
+function downloadGamutData() {
+  exportData(DATA_EXPORT_SUFFIX.gamut3d, () => {
+    const cloud = pointCloudResult.value
+    const image = selectedImage.value
+    if (!cloud || !image) return null
+    const text = buildGamutPointsCsv(
+      cloud,
+      {
+        fileName: image.fileName,
+        colorSpace: image.colorAwareImageData.colorSpace,
+        width: image.colorAwareImageData.imageData.width,
+        height: image.colorAwareImageData.imageData.height,
+      },
+      new Date().toISOString(),
+    )
+    return { text, mime: 'text/csv;charset=utf-8', ext: 'csv' }
   })
 }
 

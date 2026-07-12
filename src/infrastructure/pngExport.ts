@@ -5,28 +5,13 @@
 
 import type { Result } from '@/core/result'
 import { success, failure, BaseError } from '@/core/result'
+import { triggerBlobDownload } from '@/infrastructure/fileDownload'
 
 export type PngExportError = 'NoContext' | 'EncodeFailed' | 'SvgRenderFailed'
 
 /** @param name エラー種別 @param message 表示用メッセージ */
 function exportError(name: PngExportError, message: string): Result<void, PngExportError> {
   return failure(new BaseError<PngExportError>({ name, message }))
-}
-
-/**
- * Blob を指定ファイル名でダウンロードさせる（一時 a 要素のクリック）。
- * @param blob 保存するデータ
- * @param filename 保存ファイル名
- */
-function triggerBlobDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
 }
 
 /** Canvas を PNG Blob 化する（失敗時は null） */

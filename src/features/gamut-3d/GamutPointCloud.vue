@@ -20,11 +20,19 @@ import {
   Matrix4,
   Color,
   Vector3,
+  Quaternion,
   SRGBColorSpace,
   InstancedBufferAttribute,
 } from 'three'
-import { useLoop } from '@tresjs/core'
+import { useLoop, useTresContext } from '@tresjs/core'
+import type { Camera } from 'three'
 import type { GamutPointCloudData } from '@/types/analysis'
+import {
+  isoHueEnabled,
+  isoPlaneNormal,
+  ISO_BAND,
+  setIsoHueAvailable,
+} from './composables/isoHuePlaneState'
 
 const POINT_SIZE = 0.025
 
@@ -54,6 +62,10 @@ const timeUniform = { value: 0 }
 const animatingUniform = { value: 1 }
 const bounceDurationUniform = { value: BOUNCE_DURATION }
 const overshootUniform = { value: OVERSHOOT_SCALE }
+// 等色相面モード用（毎フレーム更新、参照共有）
+const isoHueUniform = { value: 0 }
+const planeNormalUniform = { value: isoPlaneNormal }
+const planeBandUniform = { value: ISO_BAND }
 
 const material = new MeshBasicMaterial()
 material.onBeforeCompile = (shader) => {
@@ -61,6 +73,9 @@ material.onBeforeCompile = (shader) => {
   shader.uniforms.uAnimating = animatingUniform
   shader.uniforms.uBounceDuration = bounceDurationUniform
   shader.uniforms.uOvershoot = overshootUniform
+  shader.uniforms.uIsoHue = isoHueUniform
+  shader.uniforms.uPlaneNormal = planeNormalUniform
+  shader.uniforms.uPlaneBand = planeBandUniform
 
   shader.vertexShader = shader.vertexShader.replace(
     '#include <common>',
@@ -71,6 +86,9 @@ material.onBeforeCompile = (shader) => {
       uniform float uAnimating;
       uniform float uBounceDuration;
       uniform float uOvershoot;
+      uniform float uIsoHue;
+      uniform vec3 uPlaneNormal;
+      uniform float uPlaneBand;
     `,
   )
 
@@ -98,6 +116,17 @@ material.onBeforeCompile = (shader) => {
         }
         transformed *= s;
       }
+
+      // 等色相面モード: 面（原点を通り uPlaneNormal を法線とする鉛直面）からの
+      // 水平距離が帯幅を超える点は 0 スケールに潰して非表示にする。
+      #ifdef USE_INSTANCING
+      if (uIsoHue > 0.5) {
+        vec3 iPos = instanceMatrix[3].xyz;
+        if (abs(dot(iPos, uPlaneNormal)) > uPlaneBand) {
+          transformed *= 0.0;
+        }
+      }
+      #endif
     `,
   )
 }
@@ -148,8 +177,45 @@ function buildMesh(data: GamutPointCloudData): InstancedMesh {
 let animStartTime = -1
 
 const { onBeforeRender } = useLoop()
+const { camera } = useTresContext()
+
+/** 等色相面モードを使える範囲（水平から±3°以内） */
+const ISO_SIN = Math.sin(3 * (Math.PI / 180))
+const Y_AXIS = new Vector3(0, 1, 0)
+const camRight = new Vector3()
+const parentInvQuat = new Quaternion()
+
+/** カメラ向きから等色相面の法線を更新し、±3°以内かどうかで利用可否を切り替える */
+function updateIsoPlane(cam: Camera): void {
+  const p = cam.position
+  const len = Math.hypot(p.x, p.y, p.z) || 1
+  const verticalness = Math.abs(p.y) / len
+
+  // 画面横方向（カメラ右）を水平面に射影 → その方向と L 軸で張る鉛直面が等色相面
+  camRight.set(1, 0, 0).applyQuaternion(cam.quaternion)
+  camRight.y = 0
+  if (camRight.lengthSq() < 1e-8) camRight.set(1, 0, 0)
+  camRight.normalize()
+  isoPlaneNormal.crossVectors(Y_AXIS, camRight).normalize()
+
+  // シェーダは点のローカル位置で比較するので、自動回転で親が回っていれば法線もローカル系へ。
+  // （これにより回転中は面が固定され、通り過ぎる色相が順に切り替わって見える）
+  const parent = mesh.value?.parent
+  if (parent) {
+    parentInvQuat.copy(parent.quaternion).invert()
+    isoPlaneNormal.applyQuaternion(parentInvQuat)
+  }
+
+  setIsoHueAvailable(verticalness < ISO_SIN)
+}
 
 onBeforeRender(({ elapsed }) => {
+  const cam = camera.activeCamera.value as Camera | undefined
+  if (cam) updateIsoPlane(cam)
+
+  // 等色相面モードの ON/OFF を毎フレーム反映（法線・帯幅は参照共有で自動反映）
+  isoHueUniform.value = isoHueEnabled.value ? 1 : 0
+
   if (!mesh.value) return
   if (animatingUniform.value < 0.5) return
 
@@ -190,6 +256,8 @@ watch(toRef(props, 'data'), (newData) => {
 }, { immediate: true })
 
 onScopeDispose(() => {
+  // bulk 以外に切り替わった等で点群が消えるときは等色相面モードを解除しておく
+  setIsoHueAvailable(false)
   if (mesh.value) mesh.value.dispose()
   sphereGeo.dispose()
   material.dispose()

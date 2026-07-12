@@ -33,6 +33,13 @@
                 :disabled="isExporting"
                 @click="downloadColorBubble"
               />
+              <DataDownloadButton
+                v-if="displayedResult"
+                label="JSON"
+                title="パレットデータを JSON でダウンロード（AI 分析用）"
+                :disabled="isDataExporting"
+                @click="downloadDistributionData"
+              />
             </div>
             <!-- パレット色数ステッパー -->
             <div class="flex items-center gap-1.5">
@@ -86,14 +93,16 @@
 import { computed, defineAsyncComponent, reactive, ref, shallowRef, watch } from 'vue'
 import type { ColorClusterResult } from '@/domain/colorCluster'
 import AnalysisPageLayout from '@/components/ui/AnalysisPageLayout.vue'
-import { InfoTooltip, AnalysisSpinner, AnalysisErrorCard, ExplanationContent, SectionLabel, DownloadButton } from '@/components/ui'
+import { InfoTooltip, AnalysisSpinner, AnalysisErrorCard, ExplanationContent, SectionLabel, DownloadButton, DataDownloadButton } from '@/components/ui'
 import type { ExplanationSection } from '@/components/ui'
 import { ClusterRatioBar } from '@/features/color-cluster'
 import { isAnalysisError } from '@/types/analysis'
 import { useImageStore } from '@/composables/useImageStore'
 import { useAnalysisPngExport } from '@/composables/useAnalysisPngExport'
+import { useAnalysisDataExport } from '@/composables/useAnalysisDataExport'
 import { exportSvgAsPng } from '@/infrastructure/pngExport'
-import { EXPORT_SUFFIX } from '@/domain/exportFileName'
+import { EXPORT_SUFFIX, DATA_EXPORT_SUFFIX } from '@/domain/exportFileName'
+import { buildDistributionExport } from '@/domain/analysisExport'
 
 const ClusterBubbleChart = defineAsyncComponent(() =>
   import('@/features/color-cluster/ClusterBubbleChart.vue'),
@@ -106,6 +115,7 @@ const MAX_PALETTE = 60
 
 const { images, selectedImage, getAnalysis, retryAnalysis } = useImageStore()
 const { exportPng, isExporting } = useAnalysisPngExport()
+const { exportData, isExporting: isDataExporting } = useAnalysisDataExport()
 
 /** カラーバブルチャート（PNG エクスポート用の SVG 取得に使用） */
 const bubbleChartRef = ref<{ getSvgElement: () => SVGSVGElement | null } | null>(null)
@@ -115,6 +125,26 @@ function downloadColorBubble() {
   exportPng(EXPORT_SUFFIX.colorBubble, (filename) => {
     const svg = bubbleChartRef.value?.getSvgElement()
     return svg ? exportSvgAsPng(svg, filename) : null
+  })
+}
+
+/** 色分布（パレット）データを JSON（AI 分析用）として保存する */
+function downloadDistributionData() {
+  exportData(DATA_EXPORT_SUFFIX.colorDistribution, () => {
+    const result = displayedResult.value
+    const image = selectedImage.value
+    if (!result || !image) return null
+    const data = buildDistributionExport(
+      result,
+      {
+        fileName: image.fileName,
+        colorSpace: image.colorAwareImageData.colorSpace,
+        width: image.colorAwareImageData.imageData.width,
+        height: image.colorAwareImageData.imageData.height,
+      },
+      new Date().toISOString(),
+    )
+    return { text: JSON.stringify(data, null, 2), mime: 'application/json', ext: 'json' }
   })
 }
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="absolute left-3 top-3 z-10 flex items-center gap-1.5">
+  <div class="absolute left-12 top-3 z-10 flex items-center gap-1.5">
     <SegmentedControl
       :options="options"
       :model-value="mode"
